@@ -1,0 +1,8 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Workflow compliance explicit mock package requirement",
+  "scripts": {
+    "test": "go test ./..."
+  }
+}

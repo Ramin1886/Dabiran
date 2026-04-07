@@ -1,0 +1,25 @@
+name: Application Pipeline
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build_backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Go
+        run: |
+          cd apps/backend
+          go build -a -installsuffix cgo -o main ./src
+          
+  build_frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Vite Matrix
+        run: |
+          cd apps/frontend
+          npm install
+          npm run build

@@ -1,0 +1,13 @@
+name: Deployment Pipeline
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy_infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy Infrastructure
+        run: echo "Deploying via Terraform/Kubernetes..."
