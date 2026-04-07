@@ -1,0 +1,52 @@
+export const MOCK_COMMITS = [
+  {
+    hash: 'a1b2c3d4e5f6g7h8i9j0',
+    short_hash: 'a1b2c3d',
+    author: 'System Admin',
+    message: 'Initial release and baseline build',
+    date: '2026-04-01T10:00:00Z',
+    parents: [],
+    lane: 0,
+    xOffset: 100,
+  },
+  {
+    hash: 'b2c3d4e5f6g7h8i9j0a1',
+    short_hash: 'b2c3d4e',
+    author: 'Alice Frontend',
+    message: 'Scaffold React components',
+    date: '2026-04-02T11:00:00Z',
+    parents: ['a1b2c3d4e5f6g7h8i9j0'],
+    lane: 0,
+    xOffset: 250,
+  },
+  {
+    hash: 'c3d4e5f6g7h8i9j0a1b2',
+    short_hash: 'c3d4e5f',
+    author: 'Bob Backend',
+    message: 'Setup Go database schema',
+    date: '2026-04-02T13:30:00Z',
+    parents: ['a1b2c3d4e5f6g7h8i9j0'],
+    lane: 1, // Represents a branch split
+    xOffset: 250,
+  },
+  {
+    hash: 'd4e5f6g7h8i9j0a1b2c3',
+    short_hash: 'd4e5f6g',
+    author: 'Alice Frontend',
+    message: 'Integrate PixiJS WebGL',
+    date: '2026-04-03T09:15:00Z',
+    parents: ['b2c3d4e5f6g7h8i9j0a1'],
+    lane: 0,
+    xOffset: 400,
+  },
+  {
+    hash: 'e5f6g7h8i9j0a1b2c3d4',
+    short_hash: 'e5f6g7h',
+    author: 'System Admin',
+    message: 'Merge pull request #1 from Backend',
+    date: '2026-04-04T16:00:00Z',
+    parents: ['d4e5f6g7h8i9j0a1b2c3', 'c3d4e5f6g7h8i9j0a1b2'],
+    lane: 0,
+    xOffset: 550,
+  }
+];
