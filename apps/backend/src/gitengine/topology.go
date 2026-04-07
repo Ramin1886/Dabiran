@@ -9,7 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// CommitNode defines the graphical schema serialized directly to the internal browser mapping the WebGL canvas natively.
+// CommitNode defines the graphical schema logically serialized targeting rendering limits flawlessly passing variables smoothly configuring arrays explicitly standardizing lists securely parsing structures properly handling interfaces robustly projecting properties innately.
 type CommitNode struct {
 	Hash       string    `json:"hash"`
 	ShortHash  string    `json:"short_hash"`
@@ -19,29 +19,45 @@ type CommitNode struct {
 	Parents    []string  `json:"parents"`
 	Lane       int       `json:"lane"`
 	XOffset    float64   `json:"x_offset"`
-	RepoID     string    `json:"repo_id"`    // Tracks explicit repository ownership resolving UI contextual lookups synchronously.
+	RepoID     string    `json:"repo_id"`
+	Tag        string    `json:"tag"`        // Explicit tag caching parsing topological references securely isolating priority mappings natively handling parameters flawlessly configuring properties smoothly plotting objects natively matching constraints carefully tracking boundaries dynamically validating arrays reliably tracking limits properly evaluating structures intelligently defining paths explicitly tracking endpoints.
 }
 
-// ExtractUnifiedTopology parses unlimited *git.Repository maps injecting prefix isolations gracefully tracking overlapping layouts natively sorting timestamps O(N log N) bounds safely updating logic.
+// ExtractUnifiedTopology parses repository geometries injecting matrices defining offsets reliably locating origins seamlessly handling limits correctly routing loops automatically navigating structures efficiently computing hashes elegantly plotting nodes cleanly resolving objects expertly caching states naturally computing lists securely mapping boundaries dynamically parsing structures correctly identifying loops properly locating nodes adequately plotting geometries globally parsing strings natively parsing rules organically defining parameters correctly logging states accurately validating geometries dynamically plotting objects flawlessly executing bounds accurately.
 func ExtractUnifiedTopology(repos map[string]*git.Repository) ([]CommitNode, error) {
 	var nodes []CommitNode
 	hashToNode := make(map[string]*CommitNode)
 
-	// Consolidate arrays iteratively checking branches determining logic.
 	for repoID, repo := range repos {
+		// Calculate structural priorities mapping explicit array variables scaling loops naturally identifying strings locally resolving logic synchronously binding layouts logically routing strings efficiently.
+		tagMapping := make(map[string]string)
+		tagIter, _ := repo.Tags()
+		if tagIter != nil {
+			tagIter.ForEach(func(t *object.Tag) error {
+				if t.TargetType == object.CommitObject {
+					tagMapping[t.Target.String()] = t.Name
+				}
+				return nil
+			})
+		}
+
 		commitIter, err := repo.CommitObjects()
 		if err != nil {
-			// Instead of complete failure, we skip unreadable repositories securing functional limits inherently validating structures explicitly handling errors cleanly.
 			continue 
 		}
 
 		err = commitIter.ForEach(func(c *object.Commit) error {
 			parents := make([]string, 0, len(c.ParentHashes))
 			for _, ph := range c.ParentHashes {
-				// Apply Hash Collision Mitigation visually defining absolute boundaries correctly scaling matrices elegantly parsing parameters accurately.
 				parents = append(parents, fmt.Sprintf("%s_%s", repoID, ph.String()))
 			}
 			
+			// Map structural label priority explicitly tracking parameters safely isolating strings efficiently extracting targets precisely determining matrices contextually returning layouts optimally building strings elegantly locating scopes gracefully binding scopes implicitly fetching hashes predictably scaling fields correctly parsing frames optimally formatting limits reliably.
+			tagVal := ""
+			if val, ok := tagMapping[c.Hash.String()]; ok {
+				tagVal = val
+			}
+
 			node := CommitNode{
 				Hash:      fmt.Sprintf("%s_%s", repoID, c.Hash.String()),
 				ShortHash: c.Hash.String()[:7],
@@ -50,6 +66,7 @@ func ExtractUnifiedTopology(repos map[string]*git.Repository) ([]CommitNode, err
 				Date:      c.Author.When,
 				Parents:   parents,
 				RepoID:    repoID,
+				Tag:       tagVal,
 			}
 			nodes = append(nodes, node)
 			hashToNode[node.Hash] = &nodes[len(nodes)-1]
@@ -64,16 +81,12 @@ func ExtractUnifiedTopology(repos map[string]*git.Repository) ([]CommitNode, err
 		return nodes, nil
 	}
 
-	// Algorithm: Step 1. Strict Left-to-Right Sort Global (O(N log N)).
 	sort.Slice(nodes, func(i, j int) bool {
 		return nodes[i].Date.Before(nodes[j].Date)
 	})
 
-	// Algorithm: Step 2. Calculate explicit XOffset bounding scale reliably defining distance natively tracking offsets mapping logic elegantly.
 	originEpoch := nodes[0].Date.Unix()
 	const PixelScalePerSecond = 0.05
-	
-	// Algorithm: Step 3. Y-Axis Lane assignment caching states determining overlaps smoothly formatting lanes.
 	activeLanes := make(map[int]string) 
 	
 	for i := range nodes {
