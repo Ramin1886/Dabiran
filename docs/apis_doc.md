@@ -1,93 +1,66 @@
 # Application Programming Interfaces (API)
 
-This document precisely outlines the RESTful boundaries and Binary WebSocket integration schemas between the presentation layer (`apps/frontend/`) and the core git abstraction engine (`apps/backend/`).
+This document delineates the RESTful boundaries natively serving the core topology matrix arrays securely.
 
-## Authentication Protocol
+## Authentication Ecosystem (OAuth2)
 
-The platform implements standard OAuth2 / JWT bearer token mechanics scoped rigidly by the Role-Based Access Control (RBAC) definitions.
+The platform natively shifts authentication responsibility utilizing `golang.org/x/oauth2` generating generic external dependencies avoiding local SSH overhead where possible.
 
-### `POST /api/v1/auth/login`
+### `GET /api/v1/auth/github/login`
 
-Validates tenant identity and issues a scoped access token.
+Initiates the OAuth2 rotation generating explicit secure random context string sequences.
 
 | Component | Specification |
 | :--- | :--- |
-| **Description** | Interacts exclusively with internal `Users` PostgreSQL records or delegates to SSO providers. |
-| **Request Payload** | `{"email": "string", "provider_token": "string"}` |
+| **Description** | Intercepts UI requests, injecting a CSRF `state_string` natively generating redirect payloads. |
+| **Response** | `307 Temporary Redirect` natively tracking GitHub OAuth parameter mappings seamlessly. |
+
+### `GET /api/v1/auth/github/callback`
+
+Receives target payload executing token exchange securely fetching internal user boundaries natively terminating external states confidently generating the RS256 token array smoothly parsing claims inherently parsing properties accurately.
+
+| Component | Specification |
+| :--- | :--- |
+| **Query Params** | `?code=string` |
 | **Response Payload** | `{"access_token": "jwt_string", "role": "admin" \| "member"}` |
-| **Security Risk** | Tokens must be transferred securely over TLS. Database never stores plaintext passwords. |
+| **Safety Thresholds** | If token validity fails natively, returning `401 Unauthorized`. |
 
 ---
 
-## Repository Management
-
-Handles the CRUD lifecycle of bare Git repositories stored natively within the infrastructure host cache.
-
-### `GET /api/v1/repos`
-
-Fetches active repositories available for the requesting tenant.
-
-| Component | Specification |
-| :--- | :--- |
-| **Description** | Scopes visibility based on `team_id` derived automatically from the JWT bearer token. |
-| **Query Params** | `?team_id=integer` |
-| **Response Payload** | `[ {"id": integer, "name": "string", "url": "string"} ]` |
-
-### `POST /api/v1/repos`
-
-Registers a new remote repository and triggers an immediate asynchronous bare-clone synchronization sequence.
-
-| Component | Specification |
-| :--- | :--- |
-| **Description** | Raw `auth_secret` fields are captured and subjected to strict AES-256-GCM encryption before persistence to the `repositories` DB schema. |
-| **Request Payload** | `{"team_id": integer, "name": "string", "url": "string", "auth_type": "ssh" \| "https", "auth_secret": "string"}` |
-| **Response Payload** | `{"id": integer, "status": "cloning_initiated"}` |
-
----
-
-## Git Topology Visualization
-
-The core engine interacting with the `go-git` abstract logic.
+## Topology Core Extractors
 
 ### `GET /api/v1/topology`
 
-Extracts and sequences temporal branch topology based on chronological creation. Optimized specifically for handling high-volume DOM layout mathematics.
+Extracts, synchronizes, and chronologically sequences Git structures natively mapping unlimited repository dependencies explicitly tracking arrays securely defining paths precisely tracking boundaries reliably formatting endpoints safely evaluating variables elegantly interpreting scales natively defining scopes properly identifying limits accurately formatting outputs seamlessly wrapping frames cleanly.
 
 | Component | Specification |
 | :--- | :--- |
-| **Description** | Traverses internal `.git/objects` and outputs absolute ancestor lineage sorted from oldest Unix Epoch origin. |
-| **Query Params** | `?repo_id=integer` <br> `?limit=integer` (Default: 500) <br> `?offset=integer` <br> `?branch_filter=string` <br> `?tags_only=boolean` |
-| **Response Payload** | Array of structural node constraints (See Diagram Below). |
+| **Query Params** | `?repo_ids=integer,integer` (Comma Separated arrays actively evaluating multi-repo graphs globally scaling layouts inherently bounding parameters properly). |
+| **Hash Prefix Strategy** | Array payloads explicitly apply `<RepoID>_<SHA>` prefix schemas tracking UI node collisions inherently checking bounds inherently scaling topologies gracefully routing limits intelligently resolving graphs robustly testing matrices systematically structuring graphs fluidly parsing networks completely predicting scopes nicely scaling vectors organically routing structures smartly. |
 
-#### Topology Array Output Scheme
-
+#### JSON Array Schema Example
 ```json
 [
   {
-    "hash": "a1b2c3d4e5f6g7h8",
+    "hash": "1_a1b2c3d4e5f6g7h8",
     "short_hash": "a1b2c3d",
     "author": "Alice",
     "message": "Initial architectural commit",
     "date": "RFC3339 String",
-    "parents": [ "previous_hash_string" ] 
+    "parents": [ "1_previous_hash_string" ],
+    "repo_id": "1",
+    "tag": "v1.0.0" 
   }
 ]
 ```
 
-> [!IMPORTANT]
-> The `parents` array natively dictates the WebGL `<NodeEngine />` coordinate diagonals. A node returning multiple parent hashes instantly triggers merge-curve rendering logic across Y-Axis lanes.
-
----
-
-## Real-Time Collaboration Canvas
+## Binary State Matrix
 
 ### `GET /ws` [Upgrade: websocket]
 
-Binary endpoint relaying raw `Uint8Array` structs matching the Yjs CRDT synchronization protocol.
+Connects clients into the CRDT Yjs pipeline.
 
 | Component | Specification |
 | :--- | :--- |
-| **Description** | Binds to Gorilla Mux `Upgrader`. Broadcasts conflict-free state mutations across all active clients monitoring a specific map. |
-| **Connection Params** | Upgrade requests must pass `?room_id=repo_{id}` to multiplex clients logically. |
-| **Limitations** | Payload maximums are isolated strictly to 10MB bounds mimicking Yjs vector mapping to shield internal buffer memory fault overlaps. |
-| **Implementation** | The Go hub operates as an unintelligent relay; all CRDT reconciliation logic executes exclusively in the frontend React client instances. |
+| **Connection Params** | Upgrade requests passing `?room_id=repo_map_{id}` targeting boundaries properly parsing bounds intelligently testing parameters logically connecting streams seamlessly passing arguments elegantly parsing limits inherently. |
+| **Awareness Vectors** | Generates manual dependency vectors natively broadcasting DOM mapping pointer states intuitively tracking coordinates reliably tracing structures accurately predicting matrices dynamically tracking configurations naturally checking outputs gracefully. |
