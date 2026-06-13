@@ -1,6 +1,6 @@
 // Package db owns PostgreSQL connectivity and the idempotent schema
-// migration for the persistence layer (users, teams, repositories,
-// annotations — see src/models/models.go).
+// migration for the persistence layer (users, teams, team_memberships,
+// repositories, annotations — see src/models/models.go).
 package db
 
 import (
@@ -53,8 +53,17 @@ CREATE TABLE IF NOT EXISTS repositories (
 	team_id              INTEGER NOT NULL REFERENCES teams(id),
 	name                 TEXT NOT NULL,
 	url                  TEXT NOT NULL,
+	auth_type            TEXT NOT NULL DEFAULT '',
 	encrypted_credential TEXT NOT NULL DEFAULT '',
 	created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS team_memberships (
+	id      SERIAL PRIMARY KEY,
+	team_id INTEGER NOT NULL REFERENCES teams(id),
+	user_id INTEGER NOT NULL REFERENCES users(id),
+	role    TEXT NOT NULL DEFAULT 'Team Member',
+	UNIQUE(team_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS annotations (
@@ -65,6 +74,10 @@ CREATE TABLE IF NOT EXISTS annotations (
 	author_id     INTEGER NOT NULL REFERENCES users(id),
 	created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Idempotent column add for repositories tables created before auth_type
+-- existed (CREATE TABLE IF NOT EXISTS does not retro-fit columns).
+ALTER TABLE repositories ADD COLUMN IF NOT EXISTS auth_type TEXT NOT NULL DEFAULT '';
 `
 
 // Migrate applies the idempotent schema DDL on pool. Safe to call on every

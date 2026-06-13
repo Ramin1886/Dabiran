@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ramin1886/git-interactive-history/backend/src/auth"
+	"github.com/ramin1886/git-interactive-history/backend/src/crypto"
 	"github.com/ramin1886/git-interactive-history/backend/src/gitengine"
 )
 
@@ -24,12 +25,15 @@ type APIServer struct {
 	// DB is optional: when nil (e.g. local dev without Postgres) repository
 	// lookups fall back to bare repos under Engine.BaseStoragePath.
 	DB *pgxpool.Pool
+	// OAuth serves the GitHub OAuth2 endpoints; it shares the same DB pool.
+	OAuth *auth.OAuthHandler
 }
 
 // NewAPIServer constructs an APIServer over engine. pool may be nil to run
-// without database-backed repository metadata.
+// without database-backed repository metadata; the OAuth handler is wired to
+// the same pool so identity persistence and repository scoping agree.
 func NewAPIServer(engine *gitengine.GitEngine, pool *pgxpool.Pool) *APIServer {
-	return &APIServer{Engine: engine, DB: pool}
+	return &APIServer{Engine: engine, DB: pool, OAuth: auth.NewOAuthHandler(pool)}
 }
 
 // LoginMock issues a development JWT for the single-tenant default identity
@@ -48,17 +52,29 @@ func (s *APIServer) LoginMock(w http.ResponseWriter, r *http.Request) {
 
 // openRepository resolves one repo id to a git repository. If a repositories
 // row exists in the database, the repo is cloned/refreshed from its URL via
-// the engine; otherwise it falls back to a local bare repo at
+// the engine, decrypting the stored credential (when present) under the master
+// key and passing auth_type + secret to the engine; an empty credential
+// triggers an anonymous fetch. Otherwise it falls back to a local bare repo at
 // <BaseStoragePath>/mock_<id>.git, then <BaseStoragePath>/repo_<id>.git.
 func (s *APIServer) openRepository(ctx context.Context, id string) (*git.Repository, error) {
 	if s.DB != nil {
 		if numericID, err := strconv.Atoi(id); err == nil {
-			var url string
-			row := s.DB.QueryRow(ctx, "SELECT url FROM repositories WHERE id = $1", numericID)
-			if err := row.Scan(&url); err == nil {
-				// TODO: decrypt EncryptedCredential via the secrets layer and
-				// pass real auth; anonymous fetch covers public repos for now.
-				return s.Engine.EnsureRepository(ctx, numericID, url, "", "")
+			var url, authType, encrypted string
+			row := s.DB.QueryRow(ctx, "SELECT url, auth_type, encrypted_credential FROM repositories WHERE id = $1", numericID)
+			if err := row.Scan(&url, &authType, &encrypted); err == nil {
+				secret := ""
+				if encrypted != "" {
+					key, kerr := crypto.MasterKey()
+					if kerr != nil {
+						return nil, kerr
+					}
+					plain, derr := crypto.Decrypt(encrypted, key)
+					if derr != nil {
+						return nil, derr
+					}
+					secret = string(plain)
+				}
+				return s.Engine.EnsureRepository(ctx, numericID, url, authType, secret)
 			}
 		}
 	}
@@ -70,10 +86,56 @@ func (s *APIServer) openRepository(ctx context.Context, id string) (*git.Reposit
 	return nil, fmt.Errorf("repository %q not found", id)
 }
 
+// authorizeRepos returns nil only when every id in requestedIDs is a numeric
+// repository owned by teamID. Non-numeric ids and any id not owned by the team
+// cause an error (mapped to 403 by the caller). An empty request is allowed
+// (the caller separately rejects empty repo_ids upstream).
+func (s *APIServer) authorizeRepos(ctx context.Context, teamID int, requestedIDs []string) error {
+	numeric := make([]int, 0, len(requestedIDs))
+	for _, id := range requestedIDs {
+		n, err := strconv.Atoi(id)
+		if err != nil {
+			return fmt.Errorf("non-numeric repo id %q", id)
+		}
+		numeric = append(numeric, n)
+	}
+	if len(numeric) == 0 {
+		return nil
+	}
+	rows, err := s.DB.Query(ctx, "SELECT id FROM repositories WHERE team_id = $1 AND id = ANY($2)", teamID, numeric)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	owned := make(map[int]bool, len(numeric))
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		owned[id] = true
+	}
+	if rows.Err() != nil {
+		return rows.Err()
+	}
+	for _, n := range numeric {
+		if !owned[n] {
+			return fmt.Errorf("repository %d not owned by team %d", n, teamID)
+		}
+	}
+	return nil
+}
+
 // ServeTopology handles GET /api/v1/topology?repo_ids=1,2 — it resolves each
 // repository, extracts the unified chronological topology, and writes the
-// CommitNode JSON array. Requires a valid JWT (enforced by RequireAuth);
-// callers outside the single-tenant default team get 403.
+// CommitNode JSON array. Requires a valid JWT (enforced by RequireAuth).
+//
+// Authorization has two modes:
+//   - DB-backed: every requested repo_id must belong to the caller's team
+//     (SELECT ... WHERE team_id=$1 AND id = ANY($2)); any requested id the team
+//     does not own yields 403.
+//   - DB nil (local dev with filesystem-seeded repos): the legacy single-tenant
+//     guard applies — only auth.DefaultTeamID is authorized.
 func (s *APIServer) ServeTopology(w http.ResponseWriter, r *http.Request) {
 	repoIDsParam := r.URL.Query().Get("repo_ids")
 	if repoIDsParam == "" {
@@ -81,20 +143,32 @@ func (s *APIServer) ServeTopology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Single-tenant guard: only auth.DefaultTeamID exists today. Replace
-	// with a repositories.team_id ownership check once teams are persisted.
 	claims, ok := r.Context().Value(ClaimsContextKey).(*auth.Claims)
-	if !ok || claims.TeamID != auth.DefaultTeamID {
+	if !ok {
+		http.Error(w, "authorization required", http.StatusUnauthorized)
+		return
+	}
+
+	requestedIDs := make([]string, 0)
+	for _, id := range strings.Split(repoIDsParam, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			requestedIDs = append(requestedIDs, id)
+		}
+	}
+
+	if s.DB != nil {
+		if err := s.authorizeRepos(r.Context(), claims.TeamID, requestedIDs); err != nil {
+			http.Error(w, "team is not authorized for these repositories", http.StatusForbidden)
+			return
+		}
+	} else if claims.TeamID != auth.DefaultTeamID {
+		// Filesystem-seeded dev mode: only the default team is authorized.
 		http.Error(w, "team is not authorized for these repositories", http.StatusForbidden)
 		return
 	}
 
 	reposMap := make(map[string]*git.Repository)
-	for _, id := range strings.Split(repoIDsParam, ",") {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
+	for _, id := range requestedIDs {
 		if repo, err := s.openRepository(r.Context(), id); err == nil {
 			reposMap[id] = repo
 		}
@@ -116,11 +190,22 @@ func (s *APIServer) ServeTopology(w http.ResponseWriter, r *http.Request) {
 }
 
 // AddRoutes registers all REST endpoints on mux: mock login, the GitHub
-// OAuth2 pair documented in docs/apis_doc.md, and the JWT-protected
+// OAuth2 pair documented in docs/apis_doc.md, repository management (create
+// is Team Owner only; list is any authenticated user), and the JWT-protected
 // topology extractor.
 func (s *APIServer) AddRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/auth/login", s.LoginMock)
-	mux.HandleFunc("/api/v1/auth/github/login", auth.HandleLogin)
-	mux.HandleFunc("/api/v1/auth/github/callback", auth.HandleCallback)
+	mux.HandleFunc("/api/v1/auth/github/login", s.OAuth.HandleLogin)
+	mux.HandleFunc("/api/v1/auth/github/callback", s.OAuth.HandleCallback)
+	mux.HandleFunc("/api/v1/repositories", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			RequireRole("Team Owner", s.CreateRepository)(w, r)
+		case http.MethodGet:
+			RequireAuth(s.ListRepositories)(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/api/v1/topology", RequireAuth(s.ServeTopology))
 }

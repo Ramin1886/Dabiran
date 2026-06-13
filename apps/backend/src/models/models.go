@@ -23,13 +23,24 @@ type Team struct {
 
 // Repository is a tracked remote git repository owned by a team. The
 // credential is stored AES-256-GCM encrypted and never serialized to JSON.
+// AuthType selects the transport auth scheme ("https", "ssh", or "").
 type Repository struct {
 	ID                  int
 	TeamID              int
 	Name                string
 	URL                 string
+	AuthType            string
 	EncryptedCredential string `json:"-"`
 	CreatedAt           time.Time
+}
+
+// TeamMembership binds a user to a team with a per-team RBAC role. The
+// (team_id, user_id) pair is unique, so a user holds at most one role per team.
+type TeamMembership struct {
+	ID     int
+	TeamID int
+	UserID int
+	Role   string
 }
 
 // Annotation is a persisted canvas annotation (snapshot of CRDT state)
