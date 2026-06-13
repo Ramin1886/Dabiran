@@ -84,6 +84,32 @@ implemented and covered by the test suites.
 
 ## Remaining
 
-No outstanding features. Possible future directions: streaming/virtualized
-topology loading for million-commit repositories, and a presence/permissions
-model for shared saved views.
+### Multi-provider Git support
+
+The repository **visualization** core is already provider-neutral — the git
+engine clones/fetches over standard HTTPS or SSH (`go-git`), so any host
+(GitHub, GitLab, Bitbucket, Azure DevOps, Gitea, self-hosted) can be rendered.
+Three areas are still GitHub-specific and should be generalized behind a
+provider abstraction:
+
+- [ ] **OAuth login per provider** — today only GitHub (`golang.org/x/oauth2/
+  github`). Add GitLab, Bitbucket, and Azure DevOps OAuth endpoints/scopes
+  behind a `Provider` interface, selected per team; routes like
+  `/api/v1/auth/{provider}/login|callback`.
+- [ ] **Identity + org→team mapping per provider** — the `GitHubClient`
+  (`api.github.com` profile/orgs/admin) should become a `ProviderClient`
+  interface with GitLab (groups), Bitbucket (workspaces), and Azure DevOps
+  (organizations) implementations feeding the same user/team upsert.
+- [ ] **Webhook ingestion per provider** — `/api/v1/webhooks/github` (HMAC
+  `X-Hub-Signature-256`, GitHub push payload) needs siblings for GitLab
+  (`X-Gitlab-Token`, `X-Gitlab-Event`), Bitbucket (`X-Event-Key`), and Azure
+  DevOps service hooks, normalizing into one internal push event.
+- [ ] **Provider-aware HTTPS credentials** — the clone/fetch basic-auth
+  username is hardcoded to `x-access-token` (a GitHub convention); make it
+  provider-specific (e.g. GitLab `oauth2`, Bitbucket `x-token-auth`). SSH key
+  auth already works for every provider.
+
+### Other future directions
+
+- [ ] Streaming/virtualized topology loading for million-commit repositories.
+- [ ] A presence/permissions model for sharing saved views across a team.
