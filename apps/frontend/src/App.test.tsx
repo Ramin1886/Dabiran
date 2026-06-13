@@ -50,6 +50,7 @@ describe('App', () => {
       tagsOnly: false,
       hiddenLanes: [],
       hiddenAuthors: [],
+      recompactLayout: false,
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
@@ -179,6 +180,17 @@ describe('App', () => {
     fireEvent.click(button);
     expect(useStore.getState().drawingState).toBe(true);
     expect(screen.getByRole('button', { name: 'Drawing: ON' })).toBeTruthy();
+  });
+
+  it('toggles client-side layout recompaction via the HUD button', async () => {
+    render(<App />);
+    await screen.findByText('Loaded 1 commits');
+
+    const button = screen.getByRole('button', { name: 'Recompact layout' });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(button);
+    expect(useStore.getState().recompactLayout).toBe(true);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('toggles the tagged-commits-only filter via the HUD button', async () => {

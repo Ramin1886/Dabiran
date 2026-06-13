@@ -39,3 +39,12 @@ pub fn cull_segment_indices(
 pub fn bezier_polyline(sx: f32, sy: f32, ex: f32, ey: f32, segments: u32) -> Vec<f32> {
     core::bezier_polyline(sx, sy, ex, ey, segments)
 }
+
+/// Computes the chronological branch layout for the given nodes, returning a
+/// flat `[lane0, x0, lane1, x1, …]` `Float32Array` aligned to the input order.
+/// `dates` are Unix seconds; `primary_parent[i]` is the index of node i's
+/// first parent or -1. See [`core::layout`].
+#[wasm_bindgen]
+pub fn layout(dates: &[f64], primary_parent: &[i32]) -> Vec<f32> {
+    core::layout(dates, primary_parent)
+}

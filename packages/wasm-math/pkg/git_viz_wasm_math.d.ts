@@ -20,6 +20,14 @@ export function cull_indices(positions: Float32Array, min_x: number, min_y: numb
  */
 export function cull_segment_indices(segments: Float32Array, min_x: number, min_y: number, max_x: number, max_y: number): Uint32Array;
 
+/**
+ * Computes the chronological branch layout for the given nodes, returning a
+ * flat `[lane0, x0, lane1, x1, …]` `Float32Array` aligned to the input order.
+ * `dates` are Unix seconds; `primary_parent[i]` is the index of node i's
+ * first parent or -1. See [`core::layout`].
+ */
+export function layout(dates: Float64Array, primary_parent: Int32Array): Float32Array;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -27,6 +35,7 @@ export interface InitOutput {
     readonly bezier_polyline: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly cull_indices: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly cull_segment_indices: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly layout: (a: number, b: number, c: number, d: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

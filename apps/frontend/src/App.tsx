@@ -54,6 +54,8 @@ export default function App() {
   const hiddenAuthors = useStore((state) => state.hiddenAuthors);
   const toggleAuthor = useStore((state) => state.toggleAuthor);
   const showAllAuthors = useStore((state) => state.showAllAuthors);
+  const recompactLayout = useStore((state) => state.recompactLayout);
+  const toggleRecompact = useStore((state) => state.toggleRecompact);
   const didInit = useRef(false);
 
   /** Sorted unique branch lanes present in the loaded topology. */
@@ -231,6 +233,23 @@ export default function App() {
             }}
           >
             Tags only
+          </button>
+
+          {/* Client-side layout recompaction (wasm engine): re-lays-out the
+              visible subset so filtering closes branch-lane gaps. */}
+          <button
+            type="button"
+            onClick={() => toggleRecompact()}
+            aria-pressed={recompactLayout}
+            aria-label="Recompact layout"
+            style={{
+              ...hudControlStyle,
+              cursor: 'pointer',
+              fontWeight: 600,
+              ...(recompactLayout ? hudActiveStyle : {}),
+            }}
+          >
+            Recompact
           </button>
 
           {/* Per-branch (lane) visibility toggles. Splits and merges stay

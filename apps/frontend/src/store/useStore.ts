@@ -21,6 +21,12 @@ interface AppState {
   hiddenLanes: number[];
   /** Authors the user has hidden via the per-author visibility toggles. */
   hiddenAuthors: string[];
+  /**
+   * When true, the canvas re-lays-out the visible subset client-side (via the
+   * wasm math engine), recompacting branch lanes so filtering closes gaps,
+   * instead of using the backend-assigned x_offset/lane fields.
+   */
+  recompactLayout: boolean;
   viewportTransform: ViewportTransform;
   selectedNode: string | null;
   drawingState: boolean;
@@ -54,6 +60,8 @@ interface AppState {
   toggleAuthor: (author: string) => void;
   /** Clears all hidden authors (reveals every author). */
   showAllAuthors: () => void;
+  /** Toggles client-side layout recompaction of the visible subset. */
+  toggleRecompact: () => void;
 }
 
 /**
@@ -187,6 +195,7 @@ export const useStore = create<AppState>((set, get) => {
     tagsOnly: false,
     hiddenLanes: [],
     hiddenAuthors: [],
+    recompactLayout: false,
     viewportTransform: { x: 0, y: 0, scale: 1 },
     selectedNode: null,
     drawingState: false, // Flag activating map drawing pointers overriding defaults naturally.
@@ -284,5 +293,12 @@ export const useStore = create<AppState>((set, get) => {
       set({ hiddenAuthors: [] });
       recompute();
     },
+
+    /**
+     * Toggles client-side layout recompaction. This only affects rendered
+     * coordinates (handled in NodeEngine), not which nodes are visible, so it
+     * does not trigger a filter recompute.
+     */
+    toggleRecompact: () => set({ recompactLayout: !get().recompactLayout }),
   };
 });

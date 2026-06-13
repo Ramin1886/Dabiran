@@ -55,6 +55,26 @@ export function cull_segment_indices(segments, min_x, min_y, max_x, max_y) {
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v2;
 }
+
+/**
+ * Computes the chronological branch layout for the given nodes, returning a
+ * flat `[lane0, x0, lane1, x1, …]` `Float32Array` aligned to the input order.
+ * `dates` are Unix seconds; `primary_parent[i]` is the index of node i's
+ * first parent or -1. See [`core::layout`].
+ * @param {Float64Array} dates
+ * @param {Int32Array} primary_parent
+ * @returns {Float32Array}
+ */
+export function layout(dates, primary_parent) {
+    const ptr0 = passArrayF64ToWasm0(dates, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(primary_parent, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.layout(ptr0, len0, ptr1, len1);
+    var v3 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v3;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -92,6 +112,14 @@ function getFloat32ArrayMemory0() {
     return cachedFloat32ArrayMemory0;
 }
 
+let cachedFloat64ArrayMemory0 = null;
+function getFloat64ArrayMemory0() {
+    if (cachedFloat64ArrayMemory0 === null || cachedFloat64ArrayMemory0.byteLength === 0) {
+        cachedFloat64ArrayMemory0 = new Float64Array(wasm.memory.buffer);
+    }
+    return cachedFloat64ArrayMemory0;
+}
+
 let cachedUint32ArrayMemory0 = null;
 function getUint32ArrayMemory0() {
     if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
@@ -100,9 +128,23 @@ function getUint32ArrayMemory0() {
     return cachedUint32ArrayMemory0;
 }
 
+function passArray32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getUint32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
 function passArrayF32ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 4, 4) >>> 0;
     getFloat32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArrayF64ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 8, 8) >>> 0;
+    getFloat64ArrayMemory0().set(arg, ptr / 8);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
@@ -115,6 +157,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;
+    cachedFloat64ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

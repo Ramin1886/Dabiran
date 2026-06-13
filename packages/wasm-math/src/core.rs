@@ -96,6 +96,66 @@ pub fn bezier_polyline(sx: f32, sy: f32, ex: f32, ey: f32, segments: u32) -> Vec
     out
 }
 
+/// Computes the chronological branch layout for a set of commits, mirroring
+/// the backend `layoutNodes` algorithm so the client can re-lay-out a filtered
+/// subset (recompacting lanes) without a round-trip.
+///
+/// Inputs are parallel arrays indexed by node:
+/// - `dates`: author timestamp in Unix seconds.
+/// - `primary_parent`: index (into these same arrays) of the node's first
+///   parent, or -1 when it has none / the parent is not in the set.
+///
+/// Nodes are processed in ascending date order (ties broken by input index).
+/// `x_offset = (date - oldest_date) * 0.05`. A node reuses its primary
+/// parent's lane when that parent still occupies one, otherwise it claims the
+/// next new lane (lanes are never freed, matching the backend).
+///
+/// Returns a flat `[lane0, x0, lane1, x1, …]` buffer aligned to the INPUT
+/// order (lane stored as f32; exact for realistic lane counts).
+pub fn layout(dates: &[f64], primary_parent: &[i32]) -> Vec<f32> {
+    let n = dates.len();
+    let mut out = vec![0.0f32; n * 2];
+    if n == 0 {
+        return out;
+    }
+
+    // Process order: ascending date, ties broken by original index.
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| {
+        dates[a]
+            .partial_cmp(&dates[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.cmp(&b))
+    });
+
+    let origin = dates[order[0]];
+    const SCALE: f64 = 0.05;
+    // active[lane] = index of the node currently occupying that lane.
+    let mut active: Vec<i32> = Vec::new();
+
+    for &i in &order {
+        let mut assigned: i32 = -1;
+        let pp = primary_parent[i];
+        if pp >= 0 {
+            for (lane, &occ) in active.iter().enumerate() {
+                if occ == pp {
+                    assigned = lane as i32;
+                    break;
+                }
+            }
+        }
+        if assigned < 0 {
+            assigned = active.len() as i32;
+            active.push(i as i32);
+        } else {
+            active[assigned as usize] = i as i32;
+        }
+        out[2 * i] = assigned as f32;
+        out[2 * i + 1] = ((dates[i] - origin) * SCALE) as f32;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +227,39 @@ mod tests {
         // segments=0 is clamped to 1 → start + end.
         let poly = bezier_polyline(0.0, 0.0, 10.0, 10.0, 0);
         assert_eq!(poly.len(), 4);
+    }
+
+    #[test]
+    fn layout_assigns_lanes_and_offsets() {
+        // A(t=0, no parent), B(t=10, parent A), C(t=20, no parent).
+        // B takes over A's lane (0); C claims a new lane (1).
+        let dates = [0.0, 10.0, 20.0];
+        let primary_parent = [-1, 0, -1];
+        let out = layout(&dates, &primary_parent);
+        // [laneA, xA, laneB, xB, laneC, xC]
+        assert_eq!(out[0], 0.0); // A lane 0
+        assert_eq!(out[2], 0.0); // B reuses A's lane 0
+        assert_eq!(out[4], 1.0); // C new lane 1
+        assert!((out[1] - 0.0).abs() < 1e-4); // xA = 0
+        assert!((out[3] - 0.5).abs() < 1e-4); // xB = 10 * 0.05
+        assert!((out[5] - 1.0).abs() < 1e-4); // xC = 20 * 0.05
+    }
+
+    #[test]
+    fn layout_orders_by_date_regardless_of_input_order() {
+        // Input is newest-first; the oldest still anchors x_offset origin.
+        let dates = [20.0, 0.0];
+        let primary_parent = [-1, -1];
+        let out = layout(&dates, &primary_parent);
+        // Node 1 (t=0) is the origin → x=0; node 0 (t=20) → x=1.0.
+        assert!((out[3] - 0.0).abs() < 1e-4);
+        assert!((out[1] - 1.0).abs() < 1e-4);
+        // Two independent roots get distinct lanes.
+        assert_ne!(out[0], out[2]);
+    }
+
+    #[test]
+    fn layout_empty_is_empty() {
+        assert!(layout(&[], &[]).is_empty());
     }
 }

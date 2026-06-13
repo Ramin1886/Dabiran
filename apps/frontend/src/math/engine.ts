@@ -45,6 +45,7 @@ interface WasmMath {
     ey: number,
     segments: number,
   ) => Float32Array;
+  layout: (dates: Float64Array, primaryParent: Int32Array) => Float32Array;
 }
 
 let wasm: WasmMath | null = null;
@@ -136,6 +137,45 @@ export function cullSegmentIndicesJs(segments: Float32Array, r: WorldRect): Uint
   return Uint32Array.from(out);
 }
 
+/**
+ * TS fallback for `layout` — mirrors `core::layout`. Returns a flat
+ * `[lane0, x0, lane1, x1, …]` aligned to the input order.
+ */
+export function layoutNodesJs(dates: Float64Array, primaryParent: Int32Array): Float32Array {
+  const n = dates.length;
+  const out = new Float32Array(n * 2);
+  if (n === 0) return out;
+
+  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) =>
+    dates[a] === dates[b] ? a - b : dates[a] - dates[b],
+  );
+  const origin = dates[order[0]];
+  const SCALE = 0.05;
+  const active: number[] = []; // active[lane] = node index occupying it
+
+  for (const i of order) {
+    let assigned = -1;
+    const pp = primaryParent[i];
+    if (pp >= 0) {
+      for (let lane = 0; lane < active.length; lane++) {
+        if (active[lane] === pp) {
+          assigned = lane;
+          break;
+        }
+      }
+    }
+    if (assigned < 0) {
+      assigned = active.length;
+      active.push(i);
+    } else {
+      active[assigned] = i;
+    }
+    out[2 * i] = assigned;
+    out[2 * i + 1] = (dates[i] - origin) * SCALE;
+  }
+  return out;
+}
+
 /** TS fallback for `bezier_polyline`. */
 export function bezierPolylineJs(
   sx: number,
@@ -185,4 +225,14 @@ export function bezierPolyline(
 ): Float32Array {
   if (wasm) return wasm.bezier_polyline(sx, sy, ex, ey, segments);
   return bezierPolylineJs(sx, sy, ex, ey, segments);
+}
+
+/**
+ * Chronological branch layout for the given nodes. Returns a flat
+ * `[lane0, x0, lane1, x1, …]` aligned to the input order. `dates` are Unix
+ * seconds; `primaryParent[i]` is node i's first-parent index or -1.
+ */
+export function layoutNodes(dates: Float64Array, primaryParent: Int32Array): Float32Array {
+  if (wasm) return wasm.layout(dates, primaryParent);
+  return layoutNodesJs(dates, primaryParent);
 }

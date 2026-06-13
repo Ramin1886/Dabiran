@@ -9,6 +9,7 @@ import {
   cullIndices,
   cullSegmentIndices,
   bezierPolyline,
+  layoutNodes,
   segmentTouchesRect,
 } from '../math/engine';
 import { useStore } from '../store/useStore';
@@ -172,6 +173,7 @@ export const NodeEngine: React.FC = () => {
   const setSelectedNode = useStore((state) => state.setSelectedNode);
   const transform = useStore((state) => state.viewportTransform);
   const dependencyLinks = useStore((state) => state.dependencyLinks);
+  const recompactLayout = useStore((state) => state.recompactLayout);
 
   // Track the screen size so the visible rect recomputes on window resize.
   const [screenSize, setScreenSize] = useState(readScreenSize);
@@ -216,21 +218,59 @@ export const NodeEngine: React.FC = () => {
     };
   }, [transform, screenSize.width, screenSize.height]);
 
-  /** O(1) parent lookups while drawing connectors. */
-  const nodesByHash = useMemo(
-    () => new Map(visibleNodes.map((n) => [n.hash, n])),
+  /** O(1) hash → visibleNodes index lookups. */
+  const idxByHash = useMemo(
+    () => new Map(visibleNodes.map((n, i) => [n.hash, i])),
     [visibleNodes],
+  );
+
+  /**
+   * Recompacted layout for the VISIBLE subset, computed by the math engine
+   * when "Recompact" mode is on. Returns a flat `[lane0,x0,…]` buffer aligned
+   * to visibleNodes; null when off (positions then come from the backend
+   * x_offset/lane fields). Recompaction collapses the gaps left by filtering
+   * so an isolated set of branches lays out tightly.
+   */
+  const layout = useMemo<Float32Array | null>(() => {
+    if (!recompactLayout || visibleNodes.length === 0) return null;
+    const dates = new Float64Array(visibleNodes.length);
+    const primaryParent = new Int32Array(visibleNodes.length);
+    visibleNodes.forEach((n, i) => {
+      const t = Date.parse(n.date);
+      dates[i] = Number.isNaN(t) ? 0 : t / 1000;
+      const p = n.parents[0];
+      primaryParent[i] = p !== undefined && idxByHash.has(p) ? (idxByHash.get(p) as number) : -1;
+    });
+    return layoutNodes(dates, primaryParent);
+  }, [visibleNodes, idxByHash, recompactLayout, wasmReady]);
+
+  /**
+   * World-space position per visible node — the single source of truth for
+   * rendering. Uses the recompacted layout when active, else the backend
+   * x_offset/lane fields.
+   */
+  const pos = useMemo(
+    () =>
+      visibleNodes.map((n, i) =>
+        layout
+          ? {
+              x: BASE_X_OFFSET + layout[2 * i + 1],
+              y: HEADER_Y_OFFSET + layout[2 * i] * ROW_HEIGHT,
+            }
+          : { x: nodeX(n), y: nodeY(n) },
+      ),
+    [visibleNodes, layout],
   );
 
   /** Packed node world coordinates `[x0,y0,…]` fed to the culling engine. */
   const positions = useMemo(() => {
-    const arr = new Float32Array(visibleNodes.length * 2);
-    visibleNodes.forEach((n, i) => {
-      arr[2 * i] = nodeX(n);
-      arr[2 * i + 1] = nodeY(n);
+    const arr = new Float32Array(pos.length * 2);
+    pos.forEach((p, i) => {
+      arr[2 * i] = p.x;
+      arr[2 * i + 1] = p.y;
     });
     return arr;
-  }, [visibleNodes]);
+  }, [pos]);
 
   /** Indices of visibleNodes inside the rect (wasm-accelerated when ready). */
   const visibleNodeIndices = useMemo(
@@ -241,21 +281,21 @@ export const NodeEngine: React.FC = () => {
   /** Connector edges between visible parent/child pairs, with endpoints. */
   const edges = useMemo(() => {
     const list: { key: string; sx: number; sy: number; ex: number; ey: number }[] = [];
-    for (const node of visibleNodes) {
+    visibleNodes.forEach((node, childIdx) => {
       node.parents.forEach((parentHash, i) => {
-        const parentNode = nodesByHash.get(parentHash);
-        if (!parentNode) return;
+        const parentIdx = idxByHash.get(parentHash);
+        if (parentIdx === undefined) return;
         list.push({
           key: `${parentHash}-${node.hash}-${i}`,
-          sx: nodeX(parentNode),
-          sy: nodeY(parentNode),
-          ex: nodeX(node),
-          ey: nodeY(node),
+          sx: pos[parentIdx].x,
+          sy: pos[parentIdx].y,
+          ex: pos[childIdx].x,
+          ey: pos[childIdx].y,
         });
       });
-    }
+    });
     return list;
-  }, [visibleNodes, nodesByHash]);
+  }, [visibleNodes, idxByHash, pos]);
 
   /** Indices of edges whose segment touches the rect (wasm-accelerated). */
   const visibleEdgeIndices = useMemo(() => {
@@ -300,8 +340,7 @@ export const NodeEngine: React.FC = () => {
     return visibleNodes.map((node, idx) => {
       if (!visibleNodeIndices.has(idx)) return null;
 
-      const x = nodeX(node);
-      const y = nodeY(node);
+      const { x, y } = pos[idx];
       const isSelected = selectedNode === node.hash;
       const aggregate = isAggregate(node);
       const fillColor = isSelected ? 0x00e5ff : aggregate ? 0x8b5cf6 : 0x3b82f6;
@@ -388,10 +427,13 @@ export const NodeEngine: React.FC = () => {
       // Skip links whose source or target repo has no visible node.
       if (!fromNode || !toNode) return null;
 
-      const startX = nodeX(fromNode);
-      const startY = nodeY(fromNode);
-      const endX = nodeX(toNode);
-      const endY = nodeY(toNode);
+      const fromIdx = idxByHash.get(fromNode.hash);
+      const toIdx = idxByHash.get(toNode.hash);
+      if (fromIdx === undefined || toIdx === undefined) return null;
+      const startX = pos[fromIdx].x;
+      const startY = pos[fromIdx].y;
+      const endX = pos[toIdx].x;
+      const endY = pos[toIdx].y;
 
       if (!segmentTouchesRect(startX, startY, endX, endY, visibleRect)) {
         return null;
