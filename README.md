@@ -10,6 +10,7 @@ The software strictly targets self-hosted customer environments enforcing zero-t
 This monorepo adheres strictly to enterprise operational workflow parameters.
 
 *   [Overall Architecture](./docs/architecture.md)
+*   [Technology Stack Matrix](./docs/tech_stack.md)
 *   [Developer Local Setup Guide](./docs/local-setup.md)
 *   [Features Matrix](./docs/features_doc.md)
 *   [API Schema Definitions](./docs/apis_doc.md)
