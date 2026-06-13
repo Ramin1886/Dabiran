@@ -1,76 +1,90 @@
-import { create } from 'zustand'
+import { create } from 'zustand';
+import type { CommitNode } from '@git-viz/shared-types';
+import type { ViewportTransform } from '@git-viz/utils';
 
-export interface CommitNode { 
-  hash: string; 
-  short_hash: string; 
-  author: string; 
-  message: string; 
-  date: string; 
-  parents: string[]; 
-  lane?: number; 
-  xOffset?: number; 
-  repo_id?: string;
-  tag?: string;
-}
+/** Re-exported for convenience so canvas modules share one import site. */
+export type { CommitNode };
 
-interface AppState { 
-  nodes: CommitNode[]; 
+interface AppState {
+  nodes: CommitNode[];
   visibleNodes: CommitNode[];
   searchQuery: string;
-  viewportTransform: { x: number; y: number; scale: number }; 
-  selectedNode: string | null; 
-  drawingState: boolean; 
-  setNodes: (nodes: CommitNode[]) => void; 
+  viewportTransform: ViewportTransform;
+  selectedNode: string | null;
+  drawingState: boolean;
+  setNodes: (nodes: CommitNode[]) => void;
   setSearchQuery: (query: string) => void;
-  setViewportTransform: (transform: any) => void; 
-  setSelectedNode: (hash: string | null) => void; 
+  setViewportTransform: (transform: ViewportTransform) => void;
+  setSelectedNode: (hash: string | null) => void;
   setDrawingState: (isActive: boolean) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
-  nodes: [], 
+  nodes: [],
   visibleNodes: [],
   searchQuery: '',
-  viewportTransform: { x: 0, y: 0, scale: 1 }, 
+  viewportTransform: { x: 0, y: 0, scale: 1 },
   selectedNode: null,
   drawingState: false, // Flag activating map drawing pointers overriding defaults naturally.
-  
-  setNodes: (nodes) => set({ nodes, visibleNodes: nodes }),
-  
-  // Implements the Selective Visibility Retention bounds mapping matrices intelligently determining origin bounds flawlessly parsing topologies precisely updating fields gracefully resolving targets natively logging constraints accurately predicting loops efficiently mapping branches logically scaling boundaries optimally returning paths tracking parameters properly filtering fields natively formatting loops smartly identifying strings accurately passing dependencies.
+
+  /**
+   * Replaces the full topology dataset (wire-format CommitNode[] from
+   * `GET /api/v1/topology`) and re-applies the active search filter so a
+   * refetch never leaks stale visibility state.
+   */
+  setNodes: (nodes) => {
+    set({ nodes, visibleNodes: nodes });
+    const { searchQuery, setSearchQuery } = get();
+    if (searchQuery) setSearchQuery(searchQuery);
+  },
+
+  /**
+   * Selective Visibility filter: keeps nodes matching the query on
+   * hash/author/message, and always retains structural split (multiple
+   * children) and merge (multiple parents) commits so the filtered graph
+   * preserves its topological skeleton (docs/features_doc.md §2,
+   * "Contextual Branch Rule").
+   */
   setSearchQuery: (query) => {
     const { nodes } = get();
     if (!query) {
       set({ searchQuery: query, visibleNodes: nodes });
       return;
     }
-    
-    // O(N) map calculating bounds isolating merge networks efficiently verifying loops natively checking graphs actively configuring connections seamlessly locating nodes elegantly rendering schemas intrinsically traversing branches intelligently formatting rules.
+
+    // O(N) child-count map identifying split (branching) commits.
     const childMap = new Map<string, number>();
-    nodes.forEach(n => {
-      n.parents.forEach(p => {
+    nodes.forEach((n) => {
+      n.parents.forEach((p) => {
         childMap.set(p, (childMap.get(p) || 0) + 1);
       });
     });
 
     const lowerQuery = query.toLowerCase();
-    
-    const filtered = nodes.filter(n => {
-      const isMatch = n.hash.toLowerCase().includes(lowerQuery) || 
-                      n.author.toLowerCase().includes(lowerQuery) || 
-                      n.message.toLowerCase().includes(lowerQuery);
-      
-      // Validation Check mapping limits structurally isolating constraints elegantly: retain Splits mapping natively or Merges testing reliably avoiding floating arrays generating seamlessly checking dependencies properly reading nodes effortlessly validating structures contextually verifying layouts confidently updating vectors securely projecting limits adequately mapping topologies flawlessly tracing links organically managing loops.
+
+    const filtered = nodes.filter((n) => {
+      const isMatch =
+        n.hash.toLowerCase().includes(lowerQuery) ||
+        n.author.toLowerCase().includes(lowerQuery) ||
+        n.message.toLowerCase().includes(lowerQuery);
+
+      // Retain splits and merges so isolated branches keep their origin and
+      // merge bounds visible regardless of the textual match.
       const isSplit = (childMap.get(n.hash) || 0) > 1;
       const isMerge = n.parents.length > 1;
 
       return isMatch || isSplit || isMerge;
     });
-    
+
     set({ searchQuery: query, visibleNodes: filtered });
   },
 
+  /** Persists the infinite-canvas pan/zoom transform applied by Canvas.tsx. */
   setViewportTransform: (transform) => set({ viewportTransform: transform }),
+
+  /** Marks a commit hash as selected, opening the CommitPanel HUD window. */
   setSelectedNode: (selectedNode) => set({ selectedNode }),
+
+  /** Toggles annotation drawing mode (disables panning while active). */
   setDrawingState: (drawingState) => set({ drawingState }),
-}))
+}));

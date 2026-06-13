@@ -1,66 +1,133 @@
-import * as Y from 'yjs'
-import { WebsocketProvider } from 'y-websocket'
-import { create } from 'zustand'
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
+import { create } from 'zustand';
+import type { AnnotationVector, CursorState } from '@git-viz/shared-types';
 
-interface Cursor {
-  id: number;
-  color: string;
-  x: number;
-  y: number;
-  name: string;
+/** Name of the shared Y.Array holding persisted drawing vectors. */
+const ANNOTATIONS_KEY = 'annotations';
+
+/**
+ * Resolves the y-websocket server base URL.
+ *
+ * Contract agreed with the backend: the provider is constructed as
+ * `new WebsocketProvider(WS_BASE, room, ydoc)` where WS_BASE has NO query
+ * string — y-websocket appends `/<room>` as a path segment and the backend
+ * parses the room from the path. Dev talks to the local Go daemon; in
+ * production the socket is derived from the serving host behind the HTTPS
+ * proxy (wss://<host>/ws).
+ *
+ * @returns the websocket base URL, e.g. `ws://localhost:8080/ws`
+ */
+export function resolveWsBase(): string {
+  return import.meta.env.PROD
+    ? `wss://${window.location.host}/ws`
+    : 'ws://localhost:8080/ws';
 }
 
 interface CRDTState {
   ydoc: Y.Doc;
   provider: WebsocketProvider | null;
-  cursors: Map<number, Cursor>;
+  cursors: Map<number, CursorState>;
+  annotations: AnnotationVector[];
   connect: (room: string) => void;
   updateCursor: (x: number, y: number) => void;
+  addAnnotation: (vector: AnnotationVector) => void;
 }
 
-export const useCRDT = create<CRDTState>((set, get) => ({
-  ydoc: new Y.Doc(),
-  provider: null,
-  cursors: new Map(),
+/**
+ * Wires a Y.Doc's `annotations` array into the zustand state so React
+ * re-renders whenever a local or remote drawing vector lands.
+ *
+ * @param ydoc - the shared document to observe
+ * @param set - zustand setter
+ * @returns the observed Y.Array for immediate reads
+ */
+function observeAnnotations(
+  ydoc: Y.Doc,
+  set: (partial: Partial<CRDTState>) => void,
+): Y.Array<AnnotationVector> {
+  const yAnnotations = ydoc.getArray<AnnotationVector>(ANNOTATIONS_KEY);
+  yAnnotations.observe(() => set({ annotations: yAnnotations.toArray() }));
+  return yAnnotations;
+}
 
-  // Establish binary CRDT pipeline updating matrices synchronously resolving layout boundaries correctly identifying vectors elegantly bypassing REST pipelines smoothly handling state gracefully scaling connections efficiently mapping cursors locally resolving states implicitly targeting updates explicitly tracking loops inherently testing connections effectively.
-  connect: (room: string) => {
-    const { ydoc, provider } = get()
-    if (provider) provider.disconnect()
+export const useCRDT = create<CRDTState>((set, get) => {
+  const initialDoc = new Y.Doc();
+  observeAnnotations(initialDoc, set);
 
-    const wsUrl = process.env.NODE_ENV === 'production' 
-      ? `wss://${window.location.host}/ws?room_id=${room}` 
-      : `ws://localhost:8080/ws?room_id=${room}`
+  return {
+    ydoc: initialDoc,
+    provider: null,
+    cursors: new Map(),
+    annotations: [],
 
-    const newProvider = new WebsocketProvider(wsUrl, room, ydoc)
-    
-    // Awareness Protocol captures pointer ticks globally 
-    newProvider.awareness.on('change', () => {
-      const states = newProvider.awareness.getStates()
-      const newCursors = new Map<number, Cursor>()
-      
-      states.forEach((state: any, clientID: number) => {
-        if (state.cursor && clientID !== ydoc.clientID) {
-          newCursors.set(clientID, state.cursor)
-        }
-      })
-      set({ cursors: newCursors })
-    })
+    /**
+     * Connects to a CRDT room on a fresh Y.Doc, replacing any previous
+     * provider/doc pair so state from a prior room never bleeds across.
+     * Subscribes to awareness cursor broadcasts (world-space coordinates)
+     * and to the shared `annotations` Y.Array.
+     *
+     * @param room - canonical room id, e.g. `repoMapRoom(1)` → `repo_map_1`
+     */
+    connect: (room: string) => {
+      const { provider: previous } = get();
+      if (previous) previous.destroy();
 
-    set({ provider: newProvider })
-  },
+      const ydoc = new Y.Doc();
+      const yAnnotations = observeAnnotations(ydoc, set);
+      const newProvider = new WebsocketProvider(resolveWsBase(), room, ydoc);
 
-  updateCursor: (x: number, y: number) => {
-    const { provider, ydoc } = get()
-    if (!provider) return
+      // Awareness Protocol: mirror every remote collaborator cursor tick.
+      newProvider.awareness.on('change', () => {
+        const states = newProvider.awareness.getStates();
+        const newCursors = new Map<number, CursorState>();
 
-    // Inject current operator vectors into global propagation limits safely executing boundaries continuously mapping parameters natively simulating matrices correctly handling limits effectively rendering ticks effortlessly targeting limits smoothly capturing cursors globally validating structures inherently.
-    provider.awareness.setLocalStateField('cursor', {
-      id: ydoc.clientID,
-      x,
-      y,
-      color: '#00E5FF',
-      name: 'Team Member'
-    })
-  }
-}))
+        states.forEach((state: { cursor?: CursorState }, clientID: number) => {
+          if (state.cursor && clientID !== ydoc.clientID) {
+            newCursors.set(clientID, state.cursor);
+          }
+        });
+        set({ cursors: newCursors });
+      });
+
+      set({
+        ydoc,
+        provider: newProvider,
+        cursors: new Map(),
+        annotations: yAnnotations.toArray(),
+      });
+    },
+
+    /**
+     * Broadcasts the local pointer position through the awareness protocol.
+     * Coordinates MUST already be world-space (converted via screenToWorld)
+     * so collaborators see the cursor anchored to the graph, not the screen.
+     *
+     * @param x - world-space X coordinate
+     * @param y - world-space Y coordinate
+     */
+    updateCursor: (x: number, y: number) => {
+      const { provider, ydoc } = get();
+      if (!provider) return;
+
+      provider.awareness.setLocalStateField('cursor', {
+        id: ydoc.clientID,
+        x,
+        y,
+        color: '#00E5FF',
+        name: 'Team Member',
+      } satisfies CursorState);
+    },
+
+    /**
+     * Persists a completed drawing vector into the shared `annotations`
+     * Y.Array so it replicates to (and is rendered by) every collaborator.
+     *
+     * @param vector - world-space annotation line (see AnnotationVector)
+     */
+    addAnnotation: (vector: AnnotationVector) => {
+      const { ydoc } = get();
+      ydoc.getArray<AnnotationVector>(ANNOTATIONS_KEY).push([vector]);
+    },
+  };
+});

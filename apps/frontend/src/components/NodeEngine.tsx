@@ -1,39 +1,78 @@
 import React, { useMemo } from 'react';
 import { Graphics, Text } from '@pixi/react';
 import * as PIXI from 'pixi.js';
+import type { CommitNode } from '@git-viz/shared-types';
 import { useStore } from '../store/useStore';
 
+const NODE_RADIUS = 16;
+const HEADER_Y_OFFSET = 120;
+const ROW_HEIGHT = 80;
+const BASE_X_OFFSET = 50;
+
+/**
+ * Resolves a node's world-space X coordinate from the backend-assigned
+ * chronological `x_offset` (snake_case wire field).
+ */
+function nodeX(node: CommitNode): number {
+  return BASE_X_OFFSET + (node.x_offset || 0);
+}
+
+/**
+ * Resolves a node's world-space Y coordinate from the backend-assigned
+ * branch `lane` (snake_case wire field).
+ */
+function nodeY(node: CommitNode): number {
+  return HEADER_Y_OFFSET + (node.lane || 0) * ROW_HEIGHT;
+}
+
+/**
+ * Resolves the canvas label for a commit. Label priority per the docs:
+ * render the tag text when `node.tag` is non-empty, else the short hash.
+ */
+export function nodeLabel(node: CommitNode): string {
+  return node.tag ? node.tag : node.short_hash;
+}
+
+/**
+ * NodeEngine renders the filtered commit topology (visibleNodes — the
+ * search-aware subset, never the raw node list) as WebGL circles connected
+ * by Bezier branch splines, using the backend layout fields x_offset/lane.
+ */
 export const NodeEngine: React.FC = () => {
-  const nodes = useStore((state) => state.nodes);
+  const visibleNodes = useStore((state) => state.visibleNodes);
   const selectedNode = useStore((state) => state.selectedNode);
   const setSelectedNode = useStore((state) => state.setSelectedNode);
 
-  const NODE_RADIUS = 16;
-  const HEADER_Y_OFFSET = 120;
-  const ROW_HEIGHT = 80;
-  const BASE_X_OFFSET = 50;
+  /** O(1) parent lookups while drawing connectors. */
+  const nodesByHash = useMemo(
+    () => new Map(visibleNodes.map((n) => [n.hash, n])),
+    [visibleNodes],
+  );
 
-  // Render deterministic lines connecting branches via Bezier Curving Connectors natively tracking diagonal mathematical bounds exclusively resolving sharp intersections softly mapping graphs aesthetically generating pixel splines seamlessly.
+  /**
+   * Renders the branch connector lines: straight segments along a lane and
+   * Bezier diagonals across lanes for splits/merges.
+   */
   const renderLines = () => {
-    return nodes.map((node) => {
+    return visibleNodes.map((node) => {
       return node.parents.map((parentHash, i) => {
-        const parentNode = nodes.find(n => n.hash === parentHash);
+        const parentNode = nodesByHash.get(parentHash);
         if (!parentNode) return null;
 
-        const startX = BASE_X_OFFSET + (parentNode.xOffset || 0);
-        const startY = HEADER_Y_OFFSET + (parentNode.lane || 0) * ROW_HEIGHT;
-        const endX = BASE_X_OFFSET + (node.xOffset || 0);
-        const endY = HEADER_Y_OFFSET + (node.lane || 0) * ROW_HEIGHT;
+        const startX = nodeX(parentNode);
+        const startY = nodeY(parentNode);
+        const endX = nodeX(node);
+        const endY = nodeY(node);
 
         const draw = (g: PIXI.Graphics) => {
           g.clear();
           g.lineStyle(2, 0x828282, 0.6);
           g.moveTo(startX, startY);
-          
+
           if (startY === endY) {
             g.lineTo(endX, endY);
           } else {
-            // Elegant bezier diagonal branch mapping ensuring smooth path arcs structurally parsing coordinate differences generating geometric transformations dynamically scaling curves intuitively updating render boundaries securely formatting graphs natively passing calculations inherently processing graphics elegantly resolving logic explicitly generating vectors precisely scaling geometries correctly routing paths beautifully projecting limits safely determining lengths calculating geometries gracefully scaling vectors tracking arrays processing bounds efficiently matching contexts flawlessly plotting graphics passing params safely computing lengths determining slopes successfully passing floats predicting vectors neatly returning elements correctly.
+            // Bezier diagonal mapping split/merge lane crossings smoothly.
             const controlPointX = startX + (endX - startX) / 2;
             g.bezierCurveTo(controlPointX, startY, controlPointX, endY, endX, endY);
           }
@@ -44,12 +83,13 @@ export const NodeEngine: React.FC = () => {
     });
   };
 
+  /** Renders the commit circles plus their tag/short-hash labels. */
   const renderNodes = () => {
-    return nodes.map((node) => {
-      const x = BASE_X_OFFSET + (node.xOffset || 0);
-      const y = HEADER_Y_OFFSET + (node.lane || 0) * ROW_HEIGHT;
+    return visibleNodes.map((node) => {
+      const x = nodeX(node);
+      const y = nodeY(node);
       const isSelected = selectedNode === node.hash;
-      const fillColor = isSelected ? 0x00E5FF : 0x3b82f6;
+      const fillColor = isSelected ? 0x00e5ff : 0x3b82f6;
 
       const drawNode = (g: PIXI.Graphics) => {
         g.clear();
@@ -61,14 +101,14 @@ export const NodeEngine: React.FC = () => {
 
       return (
         <React.Fragment key={node.hash}>
-          <Graphics 
-            draw={drawNode} 
+          <Graphics
+            draw={drawNode}
             interactive={true}
             pointerdown={() => setSelectedNode(node.hash)}
             cursor="pointer"
           />
           <Text
-            text={node.short_hash}
+            text={nodeLabel(node)}
             x={x}
             y={y + 24}
             anchor={[0.5, 0]}
@@ -77,7 +117,7 @@ export const NodeEngine: React.FC = () => {
                 fill: '#e2e8f0',
                 fontSize: 12,
                 fontFamily: 'monospace',
-                fontWeight: '600'
+                fontWeight: '600',
               })
             }
           />

@@ -1,6 +1,11 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
 
+/**
+ * CommitPanel: glassmorphism floating window detailing the selected commit
+ * (tag badge when present, short hash, message, author, date and parent
+ * lineage hashes). Hidden while no node is selected.
+ */
 export const CommitPanel: React.FC = () => {
   const selectedNodeHash = useStore((state) => state.selectedNode);
   const nodes = useStore((state) => state.nodes);
@@ -54,6 +59,11 @@ export const CommitPanel: React.FC = () => {
           <code style={{ background: 'rgba(0, 229, 255, 0.1)', color: '#00E5FF', padding: '4px 8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.05em' }}>
             {activeNode.short_hash}
           </code>
+          {activeNode.tag ? (
+            <span style={{ marginLeft: '8px', background: 'rgba(0, 229, 255, 0.15)', border: '1px solid rgba(0, 229, 255, 0.4)', color: '#00E5FF', padding: '3px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.05em' }}>
+              {activeNode.tag}
+            </span>
+          ) : null}
         </div>
       </div>
 
