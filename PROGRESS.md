@@ -31,9 +31,12 @@ cleared. Verification gates (all green):
 - Chronological layout, branch lanes, Bezier connectors, tag/short-hash
   labels, commit inspection panel.
 - Infinite viewport with pointer-anchored zoom/pan and **viewport culling**.
-- **Rust → WebAssembly math engine** (`@git-viz/wasm-math`): viewport culling
-  and Bezier connector flattening over packed Float32Array buffers, lazily
-  loaded with an identical pure-TS fallback.
+- **Rust → WebAssembly math engine** (`@git-viz/wasm-math`): viewport culling,
+  Bezier connector flattening, and the chronological **layout pass** over
+  packed Float32Array buffers, lazily loaded with an identical pure-TS
+  fallback. A "Recompact" toggle re-lays-out the visible subset client-side.
+- **Selective per-author filtering** and **saved canvas views** (named
+  viewport+filter snapshots persisted per user via `/api/v1/views`).
 - **Server-side graph aggregation** (`?max_nodes`) collapsing linear runs
   into cluster nodes, rendered as distinct glyphs.
 - **Meilisearch** full-text search (indexed on demand, graceful 503), with an

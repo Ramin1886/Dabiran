@@ -73,8 +73,17 @@ implemented and covered by the test suites.
   ingested via `POST /api/v1/dependency-links` and rendered as dashed
   connectors on the canvas.
 
+## Enhancements beyond the original specification
+
+- [x] **Selective per-author filtering** — a HUD "Authors" popover hides
+  commits by author, composed with the other filters and the retention rule.
+- [x] **Saved canvas views** — name, save, load, and delete view snapshots
+  (viewport + every active filter) persisted per user via `/api/v1/views`.
+- [x] **WASM layout pass ("Recompact")** — the engine re-lays-out the visible
+  subset client-side so filtering closes branch-lane gaps.
+
 ## Remaining
 
-All specified roadmap features are implemented. Future enhancements (not in
-the original specification) could include selective per-author filtering,
-saved canvas views, and offloading the layout pass itself to the wasm engine.
+No outstanding features. Possible future directions: streaming/virtualized
+topology loading for million-commit repositories, and a presence/permissions
+model for shared saved views.

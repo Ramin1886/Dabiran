@@ -13,6 +13,8 @@ examples assume the default base URL `http://localhost:8080`.
 | `/api/v1/repositories` | POST/GET | Bearer JWT | Register (Team Owner) / list team repositories |
 | `/api/v1/search` | GET | Bearer JWT | Meilisearch full-text commit search |
 | `/api/v1/dependency-links` | POST/GET | Bearer JWT | Ingest / list cross-repo dependency links |
+| `/api/v1/views` | POST/GET | Bearer JWT | Save / list per-user canvas views |
+| `/api/v1/views/{id}` | DELETE | Bearer JWT | Delete an owned canvas view |
 | `/api/v1/webhooks/github` | POST | HMAC signature | GitHub push webhook (event-driven sync) |
 | `/ws/<room>` | WebSocket | none | Yjs CRDT relay room (server-side persisted) |
 
@@ -162,6 +164,28 @@ Rust `git-dep-worker`). Stored as `dependency`-type annotation rows. The
 
 Returns the stored links whose `from_repo` is in `repo_ids` (team-scoped) as
 `{"links": [...]}`.
+
+## Saved Canvas Views
+
+Per-user named snapshots of the frontend view (viewport + active filters).
+The `state` field is an opaque JSON string the frontend owns; the backend
+stores and returns it verbatim.
+
+### `POST /api/v1/views`
+
+Body `{"name", "state"}` (both required, `400` if empty). Stored against the
+caller's `user_id`/`team_id`. Response `201` `{"id","name","state"}`.
+
+### `GET /api/v1/views`
+
+Returns `{"views": [{"id","name","state"}...]}` for the caller only, newest
+first.
+
+### `DELETE /api/v1/views/{id}`
+
+Deletes a view owned by the caller (`204`); returns `404` for a missing or
+non-owned id (leaking nothing about other users). All three require a JWT and
+return `503` when no database is attached.
 
 ## Webhooks
 

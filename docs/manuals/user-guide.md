@@ -83,10 +83,26 @@ Two HUD controls let you reduce clutter without losing structure:
   a checkbox. Uncheck a branch to hide it; **Show all** reveals everything.
   Hide every branch but one to isolate it.
 
-Both toggles obey the same rule as search: split and merge commits stay
-visible regardless, so a hidden or isolated branch always keeps its origin
-and merge points and its connections remain traceable. The toggles combine —
-e.g. "Tags only" plus a hidden branch — and stack with the search filter.
+* **Authors ▾** — opens a list of the commit authors, each with a checkbox.
+  Uncheck an author to hide their commits.
+* **Recompact** — re-lays-out the currently visible commits so hidden
+  branches no longer leave gaps; the graph closes up tightly. Toggle it off
+  to return to the original chronological positions.
+
+The Tags/Branches/Authors toggles obey the same rule as search: split and
+merge commits stay visible regardless, so a hidden or isolated branch always
+keeps its origin and merge points and its connections remain traceable. The
+toggles combine — e.g. "Tags only" plus a hidden branch plus a hidden author —
+and stack with the search filter.
+
+### Saved views
+
+The **Views ▾** control saves the current canvas state — your pan/zoom
+position and every active filter (search, tags-only, hidden branches, hidden
+authors, recompact) — under a name. Type a name and click **Save**; the view
+is stored to your account. Click a saved view to restore it exactly, or its
+**×** to delete it. Saved views are per-user and persist across sessions and
+devices.
 
 ## 6. Collaborating
 
@@ -143,6 +159,9 @@ you can visually correlate work across projects and draw links between them.
 | Click node | canvas | Open commit panel |
 | Search field | top bar | Filter commits (splits/merges always retained) |
 | **Tags only** button | top bar | Show only tagged commits |
+| **Recompact** button | top bar | Re-lay-out visible commits to close gaps |
 | **Branches ▾** button | top bar | Hide/show individual branch lanes |
+| **Authors ▾** button | top bar | Hide/show commits by author |
+| **Views ▾** button | top bar | Save / load / delete named canvas views |
 | **Draw** button | top bar | Toggle annotation drawing mode |
 | Status line | top bar, right | Connection / loading state |

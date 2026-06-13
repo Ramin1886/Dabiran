@@ -40,10 +40,15 @@ across teams.
   are prefixed `<RepoID>_<SHA>` to prevent collisions.
 * **Inverted-index search service** (Elasticsearch/Meilisearch) for
   cross-repository full-text queries over millions of commits *(roadmap)*.
-* **Selective visibility toggles** — a "tagged commits only" filter and
-  per-branch (lane) hiding in the HUD. Both compose with search and honor the
-  structural retention rule, so split and merge commits always stay visible
-  and an isolated branch keeps its origin/merge bounds.
+* **Selective visibility toggles** — "tagged commits only", per-branch (lane)
+  hiding, and per-author hiding in the HUD. All compose with search and honor
+  the structural retention rule, so split and merge commits always stay
+  visible and an isolated branch keeps its origin/merge bounds.
+* **Layout recompaction** — a "Recompact" toggle re-lays-out the visible
+  commits client-side (via the WebAssembly engine) so filtering closes
+  branch-lane gaps.
+* **Saved canvas views** — name, save, load, and delete snapshots of the
+  viewport + all active filters, persisted per user (`/api/v1/views`).
 * **Automated dependency resolution** — an AST/manifest parser worker that
   auto-links related commits across repositories *(roadmap)*.
 

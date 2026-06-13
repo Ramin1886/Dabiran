@@ -119,11 +119,21 @@ TypeScript fallback in `apps/frontend/src/math/engine.ts` mirrors it exactly.
 | `cull_indices(positions, minX, minY, maxX, maxY)` | Indices of nodes (`[x0,y0,…]`) inside the viewport rect |
 | `cull_segment_indices(segments, minX, minY, maxX, maxY)` | Indices of connector segments (`[ax,ay,bx,by,…]`) touching the rect |
 | `bezier_polyline(sx, sy, ex, ey, segments)` | Flattened branch connector polyline points |
+| `layout(dates, primary_parent)` | Chronological branch layout: `[lane0,x0,…]` (date sort + parent-takeover lanes) |
 
 ### Frontend math engine (`src/math/engine.ts`)
 
 | Export | Description |
 | :--- | :--- |
 | `initMathEngine()` | Lazily loads and initializes the wasm module; returns whether wasm is active |
-| `cullIndices` / `cullSegmentIndices` / `bezierPolyline` | Geometry API — wasm when active, else the TS fallback (`*Js` variants) |
+| `cullIndices` / `cullSegmentIndices` / `bezierPolyline` / `layoutNodes` | Geometry API — wasm when active, else the TS fallback (`*Js` variants) |
 | `pointInRect` / `segmentTouchesRect` | Single-shot rect tests (used for dependency-link culling) |
+
+### Saved views (`src/views/viewState.ts` + store)
+
+| Export | Description |
+| :--- | :--- |
+| `captureViewState()` | Snapshots the current viewport + all active filters into a `CanvasViewState` |
+| `serializeViewState` / `parseViewState` | JSON codec; `parseViewState` validates and never throws (returns null on malformed input) |
+| `useStore.applyView(state)` | Atomically restores a view (viewport + filters) and recomputes visibility once |
+| `fetchViews` / `saveView` / `deleteView` (api/client) | REST helpers for `/api/v1/views` |
