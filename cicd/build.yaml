@@ -3,23 +3,47 @@ name: Application Pipeline
 on:
   push:
     branches: ["main"]
+  pull_request:
 
 jobs:
-  build_backend:
+  test_backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
+      - name: Vet & Test Go
+        working-directory: apps/backend
+        run: |
+          go vet ./...
+          go test ./...
       - name: Build Go
-        run: |
-          cd apps/backend
-          go build -a -installsuffix cgo -o main ./src
-          
-  build_frontend:
+        working-directory: apps/backend
+        run: go build -o main ./src
+
+  test_frontend_and_packages:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install workspaces
+        run: npm ci
+      - name: Test packages and frontend
+        run: npm test
       - name: Build Vite Matrix
+        run: npm run build -w frontend
+
+  validate_infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose topology
+        run: docker compose -f infra/docker-compose.yml config -q
+      - name: Validate Kubernetes manifests
         run: |
-          cd apps/frontend
-          npm install
-          npm run build
+          kubectl kustomize infra/kubernetes/base > /dev/null
+          kubectl kustomize infra/kubernetes/overlays/production > /dev/null

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -11,6 +9,11 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U git_viz -d git_interactive_history"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   backend:
@@ -20,16 +23,30 @@ services:
     environment:
       DATABASE_URL: "postgres://git_viz:secret_password@postgres:5432/git_interactive_history?sslmode=disable"
       PORT: "8080"
+      # Override via a local .env file next to this compose file; the
+      # fallbacks keep local development working without external creds
+      # (see apps/backend/.env.example for the full variable list).
+      JWT_SECRET: "${JWT_SECRET:-super-secret-system-key-rotate-in-production}"
+      GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID:-}"
+      GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET:-}"
+      OAUTH_REDIRECT_URL: "${OAUTH_REDIRECT_URL:-http://localhost:8080/api/v1/auth/github/callback}"
+    volumes:
+      # Bare-repo cache used by the Git engine (cwd/repos inside the
+      # container, see docs/local-setup.md debugging notes).
+      - repodata:/root/repos
     ports:
       - "8080:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
     build:
-      context: ../apps/frontend
-      dockerfile: Dockerfile
+      # Repo root context: the frontend image needs the npm workspace root
+      # and packages/ (shared-types, utils) to resolve workspace deps.
+      context: ..
+      dockerfile: apps/frontend/Dockerfile
     ports:
       - "3000:80"
     depends_on:
@@ -38,3 +55,4 @@ services:
 
 volumes:
   pgdata:
+  repodata:

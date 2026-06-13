@@ -24,6 +24,23 @@ spec:
           value: "postgres://git_viz:secret_password@postgres-db:5432/git_interactive_history?sslmode=disable"
         - name: PORT
           value: "8080"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: git-viz-secrets
+              key: jwt-secret
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: git-viz-secrets
+              key: github-client-id
+              optional: true
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: git-viz-secrets
+              key: github-client-secret
+              optional: true
         resources:
           requests:
             memory: "256Mi"
