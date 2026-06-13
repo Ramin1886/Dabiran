@@ -78,6 +78,18 @@ CREATE TABLE IF NOT EXISTS annotations (
 -- Idempotent column add for repositories tables created before auth_type
 -- existed (CREATE TABLE IF NOT EXISTS does not retro-fit columns).
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS auth_type TEXT NOT NULL DEFAULT '';
+
+-- Append-only log of raw Yjs update bytes per collaboration room. The ws
+-- relay inserts one row per inbound binary frame and replays them in id order
+-- to a lone joining client so it sees previously-drawn annotations
+-- (apps/backend/src/ws/store.go).
+CREATE TABLE IF NOT EXISTS yjs_updates (
+	id         SERIAL PRIMARY KEY,
+	room       TEXT NOT NULL,
+	update     BYTEA NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_yjs_updates_room ON yjs_updates (room, id);
 `
 
 // Migrate applies the idempotent schema DDL on pool. Safe to call on every
@@ -85,6 +97,39 @@ ALTER TABLE repositories ADD COLUMN IF NOT EXISTS auth_type TEXT NOT NULL DEFAUL
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, schemaDDL); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
+	}
+	return nil
+}
+
+// SeedSingleTenant ensures the single-tenant default identity backing the
+// development LoginMock exists: a user with id=userID and a team with
+// id=teamID owned by that user, plus their membership. Without these rows the
+// repositories foreign keys (team_id -> teams, owner_id -> users) reject any
+// write made under the mock identity. It is idempotent (ON CONFLICT DO
+// NOTHING) and realigns the SERIAL sequences afterwards so subsequent
+// auto-increment inserts do not collide with the explicitly seeded ids.
+//
+// The real GitHub OAuth flow creates its own users/teams, so these seed rows
+// are harmless in production; they only make local dev work out of the box.
+func SeedSingleTenant(ctx context.Context, pool *pgxpool.Pool, userID, teamID int) error {
+	// pgx cannot run multiple parameterized commands in one Exec, so each
+	// statement is issued separately.
+	stmts := []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users (id, email, name, role) VALUES ($1, 'dev@localhost', 'Development User', 'Team Owner') ON CONFLICT (id) DO NOTHING`, []any{userID}},
+		{`INSERT INTO teams (id, name, owner_id) VALUES ($1, 'Default Workspace', $2) ON CONFLICT (id) DO NOTHING`, []any{teamID, userID}},
+		{`INSERT INTO team_memberships (team_id, user_id, role) VALUES ($1, $2, 'Team Owner') ON CONFLICT (team_id, user_id) DO NOTHING`, []any{teamID, userID}},
+		// Realign SERIAL sequences so future auto-increment inserts do not
+		// collide with the explicitly seeded ids.
+		{`SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST((SELECT MAX(id) FROM users), 1))`, nil},
+		{`SELECT setval(pg_get_serial_sequence('teams', 'id'), GREATEST((SELECT MAX(id) FROM teams), 1))`, nil},
+	}
+	for _, s := range stmts {
+		if _, err := pool.Exec(ctx, s.sql, s.args...); err != nil {
+			return fmt.Errorf("seed single-tenant identity: %w", err)
+		}
 	}
 	return nil
 }

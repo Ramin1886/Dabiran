@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ramin1886/git-interactive-history/backend/src/api"
+	"github.com/ramin1886/git-interactive-history/backend/src/auth"
 	"github.com/ramin1886/git-interactive-history/backend/src/db"
 	"github.com/ramin1886/git-interactive-history/backend/src/gitengine"
 	"github.com/ramin1886/git-interactive-history/backend/src/ws"
@@ -29,6 +30,11 @@ func connectDatabase(ctx context.Context, dbURL string) *pgxpool.Pool {
 		log.Printf("WARNING: schema migration failed, continuing without persistence: %v", err)
 		pool.Close()
 		return nil
+	}
+	// Seed the default identity backing the dev LoginMock so the repository
+	// API works against a fresh database without manual SQL.
+	if err := db.SeedSingleTenant(ctx, pool, auth.DefaultUserID, auth.DefaultTeamID); err != nil {
+		log.Printf("WARNING: failed to seed single-tenant identity: %v", err)
 	}
 	log.Println("Connected to PostgreSQL and applied schema.")
 	return pool
@@ -65,7 +71,9 @@ func main() {
 	cwd, _ := os.Getwd()
 	engine := gitengine.NewGitEngine(filepath.Join(cwd, "repos"))
 
-	hub := ws.NewHub()
+	// Wire the db pool into the relay so Yjs documents persist and replay to
+	// lone re-joining clients; with a nil pool the hub uses a no-op store.
+	hub := ws.NewHubWithStore(pool)
 	go hub.Run()
 
 	mux := newMux(api.NewAPIServer(engine, pool), hub)
