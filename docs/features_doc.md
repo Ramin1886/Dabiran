@@ -13,7 +13,7 @@ The system isolates operations dynamically enforcing secure `Role-Based Access C
 
 To limit complex topology constraints, the engine dynamically restricts rendered layouts minimizing cognitive bottlenecks explicitly.
 
-*   **Granular Searching Engine:** Compiles dynamic lookup indexing matching hashes natively (`Short` or `Full`), parsing standard author names, timestamp values, tagged identifiers, and standard message descriptions instantly.
+*   **Inverted-Index Search Infrastructure:** Integrates a dedicated search engine (e.g., Elasticsearch, Meilisearch) to guarantee sub-millisecond retrieval for complex, cross-repository textual queries across millions of commits, rather than relying on standard database dynamic lookups.
 *   **Selective Visibility Matrices:** 
     *   Renders specific toggles triggering `"Tagged Commits Only"`.
     *   Dynamically handles `"Selective Branch Visibility"` minimizing pipeline tracks exclusively isolating branches to map active logic efficiently.
@@ -21,6 +21,9 @@ To limit complex topology constraints, the engine dynamically restricts rendered
 
 ### Custom Multi-Repo Tab (Unified Canvas)
 The engine overrides standard layout configurations generating single unified mapping plains explicitly targeting isolated dependencies visualizing links dynamically tracking separated repositories simultaneously.
+
+### Automated Dependency Resolution
+A Semantic AST / Dependency Parser Worker automatically parses cross-repo manifests (`go.mod`, `package.json`, Git Submodules) or issue tracking references in commit messages. It auto-generates contextual visual links across the canvas, reducing the need for manual dependency mapping.
 
 ## 3. Real-Time Collaboration Canvas
 

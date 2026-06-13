@@ -5,7 +5,7 @@ This document extensively maps the deployment mechanics, multi-tenancy rules, an
 ## 1. High-Level Architecture
 The system operates exclusively as a Cloud-Native architecture, securely orchestrated natively over **Podman**. Operating rootless, daemonless containers enables the framework to execute securely on rigid self-hosted enterprise infrastructure topologies. 
 *   **Network Constraint:** Strict HTTPs proxying encrypts payload traffic continuously.
-*   **Encrypted Datastore:** We utilize PostgreSQL mapped natively to store complex customized maps (annotations, cross-links). All persistence is protected via AES-256 symmetrical symmetric encryption handling the underlying tenant SSH/PAT credentials seamlessly.
+*   **Encrypted Datastore & Secrets Management:** We utilize PostgreSQL mapped natively to store complex customized maps (annotations, cross-links). Tenant SSH/PAT credentials and cryptographic keys are managed via a dedicated Secrets Management Layer (e.g., HashiCorp Vault) ensuring the backend never persistently holds master cryptographic keys alongside tenant data.
 
 ## 2. Real-Time Collaboration Pipeline
 A primary architectural vector guarantees that multiple team members visualize the same topological space without locking threads.
@@ -16,9 +16,10 @@ A primary architectural vector guarantees that multiple team members visualize t
 The front-end rendering cycle utilizes **WebGL (PixiJS)** specifically, sidestepping the DOM rendering engine explicitly to tackle the **Frontend Rendering Performance Challenge**. 
 
 ### Culling mathematical bounds:
-1.  **Branch Rendering Constraints:** Branches map distinct horizontal axes. They track chronologically sorting strictly off the origin (Oldest equals origin Y-axis top bounds).
-2.  **Topological Connecting Diagonals:** Splitting and Merging are inherently mapped by calculating Bezier splines interconnecting origin structural origin IDs explicitly targeting exact horizontal layout lane crossings.
-3.  **Virtualization Mitigation:** PixiJS math restricts rendering calls exclusively to coordinate targets residing visually inside the active window boundaries, purging tens of thousands of unused commits safely from the GPU pipeline buffer rendering load cycle.
+1.  **Server-Side Graph Aggregation:** To mitigate network payloads for massive Git DAGs, the backend dynamically clusters older, non-critical linear commits into aggregated blocks based on semantic zoom levels, transmitting only structural splits and merges until explicitly requested.
+2.  **Branch Rendering Constraints:** Branches map distinct horizontal axes. They track chronologically sorting strictly off the origin (Oldest equals origin Y-axis top bounds).
+3.  **Topological Connecting Diagonals:** Splitting and Merging are inherently mapped by calculating Bezier splines interconnecting origin structural origin IDs explicitly targeting exact horizontal layout lane crossings.
+4.  **Virtualization Mitigation:** PixiJS math restricts rendering calls exclusively to coordinate targets residing visually inside the active window boundaries, purging tens of thousands of unused commits safely from the GPU pipeline buffer rendering load cycle.
 
 ## Diagram Visualization mapping Context
 
@@ -38,7 +39,7 @@ graph TD
     end
 
     subgraph Git Interaction Mitigation
-    REST -->|Bare Clone Synchronization| GIT_Engine[go-git Internal State]
-    GIT_Engine -->|HTTPS / SSH Key Fetch| Enterprise_Git[Enterprise Git Hosts]
+    REST -->|Webhook Push Events & Sparse Checkouts| GIT_Engine[Event-Driven Sync Engine]
+    GIT_Engine -->|HTTPS / SSH Key Fetch via Vault| Enterprise_Git[Enterprise Git Hosts]
     end
 ```
