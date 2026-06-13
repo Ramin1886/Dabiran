@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS teams (
 	id         SERIAL PRIMARY KEY,
-	name       TEXT NOT NULL,
+	name       TEXT NOT NULL UNIQUE,
 	owner_id   INTEGER NOT NULL REFERENCES users(id),
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -78,6 +78,9 @@ CREATE TABLE IF NOT EXISTS annotations (
 -- Idempotent column add for repositories tables created before auth_type
 -- existed (CREATE TABLE IF NOT EXISTS does not retro-fit columns).
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS auth_type TEXT NOT NULL DEFAULT '';
+
+-- Ensure teams.name is unique for databases created before the constraint was added.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_name_unique ON teams(name);
 
 -- Append-only log of raw Yjs update bytes per collaboration room. The ws
 -- relay inserts one row per inbound binary frame and replays them in id order

@@ -65,9 +65,6 @@ callback URL.
 { "access_token": "<jwt>", "role": "Team Owner" }
 ```
 
-> GitHub profile → persisted user mapping is a roadmap item; until it lands
-> the callback issues the single-tenant default identity.
-
 ## Topology
 
 ### `GET /api/v1/topology`

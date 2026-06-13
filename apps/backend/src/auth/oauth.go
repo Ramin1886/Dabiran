@@ -177,14 +177,12 @@ func (h *OAuthHandler) resolveIdentity(ctx context.Context, ghToken string) (use
 	// the schema, so we look up an existing row first and only insert when none
 	// exists, recording this user as owner of any newly created team.
 	var ownerID int
-	row := h.DB.QueryRow(ctx, `SELECT id, owner_id FROM teams WHERE name = $1 ORDER BY id LIMIT 1`, primaryOrg)
-	if scanErr := row.Scan(&teamID, &ownerID); scanErr != nil {
-		if err = h.DB.QueryRow(ctx,
-			`INSERT INTO teams (name, owner_id) VALUES ($1, $2) RETURNING id`,
-			primaryOrg, userID).Scan(&teamID); err != nil {
-			return 0, 0, "", fmt.Errorf("insert team: %w", err)
-		}
-		ownerID = userID
+	if err = h.DB.QueryRow(ctx,
+		`INSERT INTO teams (name, owner_id) VALUES ($1, $2)
+		 ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+		 RETURNING id, owner_id`,
+		primaryOrg, userID).Scan(&teamID, &ownerID); err != nil {
+		return 0, 0, "", fmt.Errorf("upsert team: %w", err)
 	}
 
 	isAdmin, adminErr := h.GitHub.IsOrgAdmin(ctx, ghToken, primaryOrg)

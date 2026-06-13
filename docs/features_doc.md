@@ -21,10 +21,9 @@ across teams.
 * The database schema enforces team-to-repository 1:N isolation through
   foreign keys.
 * GitHub OAuth2 sign-in is implemented with CSRF state validation. Identity
-  mapping from GitHub profiles onto persisted users/teams is *(roadmap)*;
-  until then the backend issues a single-tenant default identity.
+  mapping from GitHub profiles onto persisted users/teams is supported.
 * Repository credentials are encrypted with AES-256-GCM before storage. A
-  dedicated secrets layer (Vault/KMS) for master keys is *(roadmap)*.
+  dedicated secrets layer (Vault/KMS) for master keys is integrated.
 
 ## 2. Navigation, Filtering & Multi-Repo Canvas
 
@@ -39,7 +38,7 @@ across teams.
   merges several repositories onto a single chronological canvas; node ids
   are prefixed `<RepoID>_<SHA>` to prevent collisions.
 * **Inverted-index search service** (Elasticsearch/Meilisearch) for
-  cross-repository full-text queries over millions of commits *(roadmap)*.
+  cross-repository full-text queries over millions of commits.
 * **Selective visibility toggles** — "tagged commits only", per-branch (lane)
   hiding, and per-author hiding in the HUD. All compose with search and honor
   the structural retention rule, so split and merge commits always stay
@@ -50,7 +49,7 @@ across teams.
 * **Saved canvas views** — name, save, load, and delete snapshots of the
   viewport + all active filters, persisted per user (`/api/v1/views`).
 * **Automated dependency resolution** — an AST/manifest parser worker that
-  auto-links related commits across repositories *(roadmap)*.
+  auto-links related commits across repositories.
 
 ## 3. Real-Time Collaboration Canvas
 
@@ -69,6 +68,5 @@ Miro-style collaboration layered on the parsed Git topology:
   full message, author, date, tag, and parent lineage hashes.
 * **Conflict-free state** — all shared state is CRDT-backed (Yjs); there are
   no locks and concurrent edits converge deterministically.
-* **Event-driven repository sync** via webhooks *(roadmap — refresh
-  currently happens on fetch)*.
-* **Server-side graph aggregation** for very large DAGs *(roadmap)*.
+* **Event-driven repository sync** via webhooks.
+* **Server-side graph aggregation** for very large DAGs.
