@@ -49,6 +49,7 @@ describe('App', () => {
       serverHits: null,
       tagsOnly: false,
       hiddenLanes: [],
+      hiddenAuthors: [],
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
@@ -212,6 +213,32 @@ describe('App', () => {
     fireEvent.click(lane1);
 
     expect(useStore.getState().hiddenLanes).toEqual([1]);
+    expect(useStore.getState().visibleNodes.map((n) => n.hash)).not.toContain('1_b');
+  });
+
+  it('opens the authors popover and hides an author via its checkbox', async () => {
+    // Two-author topology: a lone parent/child pair (1_a → 1_b). The parent has
+    // exactly one child (not a split) and the child has one parent (not a
+    // merge), so both are plain, filterable nodes by different authors.
+    vi.mocked(fetchTopology).mockReset().mockResolvedValue([
+      makeNode({ hash: '1_a', author: 'Alice' }),
+      makeNode({ hash: '1_b', author: 'Bob', parents: ['1_a'] }),
+    ]);
+    render(<App />);
+    await screen.findByText('Loaded 2 commits');
+
+    // Popover starts closed.
+    expect(screen.queryByRole('menu', { name: 'Author list' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Author visibility' }));
+    expect(screen.getByRole('menu', { name: 'Author list' })).toBeTruthy();
+
+    // Uncheck Bob to hide him.
+    const bob = screen.getByLabelText('Author Bob') as HTMLInputElement;
+    expect(bob.checked).toBe(true);
+    fireEvent.click(bob);
+
+    expect(useStore.getState().hiddenAuthors).toEqual(['Bob']);
     expect(useStore.getState().visibleNodes.map((n) => n.hash)).not.toContain('1_b');
   });
 });

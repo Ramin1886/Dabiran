@@ -3,7 +3,7 @@ import { repoMapRoom } from '@git-viz/shared-types';
 import { InteractiveCanvas } from './components/Canvas';
 import { CommitPanel } from './components/CommitPanel';
 import { login, fetchTopology, fetchDependencyLinks, searchCommits } from './api/client';
-import { useStore, laneList } from './store/useStore';
+import { useStore, laneList, authorList } from './store/useStore';
 import { useCRDT } from './store/useCRDT';
 
 /** Repository ids loaded onto the unified canvas on boot. */
@@ -39,6 +39,7 @@ const hudActiveStyle: React.CSSProperties = {
 export default function App() {
   const [status, setStatus] = useState<string>('Authenticating…');
   const [branchesOpen, setBranchesOpen] = useState(false);
+  const [authorsOpen, setAuthorsOpen] = useState(false);
   const searchQuery = useStore((state) => state.searchQuery);
   const setSearchQuery = useStore((state) => state.setSearchQuery);
   const setServerHits = useStore((state) => state.setServerHits);
@@ -50,10 +51,16 @@ export default function App() {
   const hiddenLanes = useStore((state) => state.hiddenLanes);
   const toggleLane = useStore((state) => state.toggleLane);
   const showAllLanes = useStore((state) => state.showAllLanes);
+  const hiddenAuthors = useStore((state) => state.hiddenAuthors);
+  const toggleAuthor = useStore((state) => state.toggleAuthor);
+  const showAllAuthors = useStore((state) => state.showAllAuthors);
   const didInit = useRef(false);
 
   /** Sorted unique branch lanes present in the loaded topology. */
   const lanes = useMemo(() => laneList(nodes), [nodes]);
+
+  /** Sorted unique author names present in the loaded topology. */
+  const authors = useMemo(() => authorList(nodes), [nodes]);
 
   /**
    * On-submit "deep" server search across the full index. Calls
@@ -312,6 +319,99 @@ export default function App() {
                         aria-label={`Branch lane ${lane}`}
                       />
                       Branch {lane}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Per-author visibility toggles. Splits and merges stay visible
+              regardless, so isolated branches keep their bounds. */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setAuthorsOpen((open) => !open)}
+              aria-expanded={authorsOpen}
+              aria-label="Author visibility"
+              style={{
+                ...hudControlStyle,
+                cursor: 'pointer',
+                fontWeight: 600,
+                ...(hiddenAuthors.length > 0 ? hudActiveStyle : {}),
+              }}
+            >
+              Authors{hiddenAuthors.length > 0 ? ` (${hiddenAuthors.length} hidden)` : ''} ▾
+            </button>
+
+            {authorsOpen && (
+              <div
+                role="menu"
+                aria-label="Author list"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  minWidth: '180px',
+                  maxHeight: '320px',
+                  overflowY: 'auto',
+                  background: 'rgba(15, 23, 42, 0.92)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  padding: '10px',
+                  boxShadow: '0 20px 40px -12px rgba(0,0,0,0.6)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '6px',
+                    paddingBottom: '6px',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>
+                    {authors.length} authors
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => showAllAuthors()}
+                    style={{
+                      ...hudControlStyle,
+                      padding: '2px 8px',
+                      fontSize: '0.7rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Show all
+                  </button>
+                </div>
+                {authors.map((name) => {
+                  const hidden = hiddenAuthors.includes(name);
+                  return (
+                    <label
+                      key={name}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '4px 2px',
+                        fontSize: '0.85rem',
+                        color: hidden ? '#64748b' : '#e2e8f0',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!hidden}
+                        onChange={() => toggleAuthor(name)}
+                        aria-label={`Author ${name}`}
+                      />
+                      {name}
                     </label>
                   );
                 })}

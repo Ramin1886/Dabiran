@@ -19,6 +19,8 @@ interface AppState {
   tagsOnly: boolean;
   /** Branch lanes the user has hidden via the visibility toggles. */
   hiddenLanes: number[];
+  /** Authors the user has hidden via the per-author visibility toggles. */
+  hiddenAuthors: string[];
   viewportTransform: ViewportTransform;
   selectedNode: string | null;
   drawingState: boolean;
@@ -48,6 +50,10 @@ interface AppState {
   toggleLane: (lane: number) => void;
   /** Clears all hidden lanes (reveals every branch). */
   showAllLanes: () => void;
+  /** Hides the author if visible, or reveals it if hidden. */
+  toggleAuthor: (author: string) => void;
+  /** Clears all hidden authors (reveals every author). */
+  showAllAuthors: () => void;
 }
 
 /**
@@ -73,6 +79,7 @@ export interface FilterState {
   serverHits: string[] | null;
   tagsOnly: boolean;
   hiddenLanes: number[];
+  hiddenAuthors: string[];
 }
 
 /**
@@ -91,11 +98,16 @@ export interface FilterState {
  */
 export function applyFilters(nodes: CommitNode[], f: FilterState): CommitNode[] {
   const anyActive =
-    !!f.searchQuery || f.serverHits !== null || f.tagsOnly || f.hiddenLanes.length > 0;
+    !!f.searchQuery ||
+    f.serverHits !== null ||
+    f.tagsOnly ||
+    f.hiddenLanes.length > 0 ||
+    f.hiddenAuthors.length > 0;
   if (!anyActive) return nodes;
 
   const childMap = buildChildMap(nodes);
   const hiddenLaneSet = new Set(f.hiddenLanes);
+  const hiddenAuthorSet = new Set(f.hiddenAuthors);
   const hitSet = f.serverHits ? new Set(f.serverHits) : null;
   const lowerQuery = f.searchQuery.toLowerCase();
 
@@ -107,6 +119,9 @@ export function applyFilters(nodes: CommitNode[], f: FilterState): CommitNode[] 
 
     // Branch (lane) visibility.
     if (hiddenLaneSet.has(n.lane)) return false;
+
+    // Per-author visibility.
+    if (hiddenAuthorSet.has(n.author)) return false;
 
     // Tagged-only filter.
     if (f.tagsOnly && !n.tag) return false;
@@ -138,11 +153,30 @@ export function laneList(nodes: CommitNode[]): number[] {
   return Array.from(new Set(nodes.map((n) => n.lane))).sort((a, b) => a - b);
 }
 
+/**
+ * Returns the sorted, de-duplicated list of author names present in the
+ * topology — the set of toggleable authors for the visibility HUD.
+ *
+ * @param nodes - the full loaded topology
+ * @returns alphabetically sorted unique author names
+ */
+export function authorList(nodes: CommitNode[]): string[] {
+  return Array.from(new Set(nodes.map((n) => n.author))).sort((a, b) => a.localeCompare(b));
+}
+
 export const useStore = create<AppState>((set, get) => {
   /** Recomputes visibleNodes from the current topology and filter state. */
   const recompute = () => {
-    const { nodes, searchQuery, serverHits, tagsOnly, hiddenLanes } = get();
-    set({ visibleNodes: applyFilters(nodes, { searchQuery, serverHits, tagsOnly, hiddenLanes }) });
+    const { nodes, searchQuery, serverHits, tagsOnly, hiddenLanes, hiddenAuthors } = get();
+    set({
+      visibleNodes: applyFilters(nodes, {
+        searchQuery,
+        serverHits,
+        tagsOnly,
+        hiddenLanes,
+        hiddenAuthors,
+      }),
+    });
   };
 
   return {
@@ -152,6 +186,7 @@ export const useStore = create<AppState>((set, get) => {
     serverHits: null,
     tagsOnly: false,
     hiddenLanes: [],
+    hiddenAuthors: [],
     viewportTransform: { x: 0, y: 0, scale: 1 },
     selectedNode: null,
     drawingState: false, // Flag activating map drawing pointers overriding defaults naturally.
@@ -229,6 +264,24 @@ export const useStore = create<AppState>((set, get) => {
     /** Reveals every branch lane and recomputes. */
     showAllLanes: () => {
       set({ hiddenLanes: [] });
+      recompute();
+    },
+
+    /** Toggles a single author's visibility and recomputes. */
+    toggleAuthor: (author) => {
+      const hidden = new Set(get().hiddenAuthors);
+      if (hidden.has(author)) {
+        hidden.delete(author);
+      } else {
+        hidden.add(author);
+      }
+      set({ hiddenAuthors: Array.from(hidden).sort((a, b) => a.localeCompare(b)) });
+      recompute();
+    },
+
+    /** Reveals every author and recomputes. */
+    showAllAuthors: () => {
+      set({ hiddenAuthors: [] });
       recompute();
     },
   };

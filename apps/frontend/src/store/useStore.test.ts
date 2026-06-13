@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { CommitNode, DependencyLink } from '@git-viz/shared-types';
-import { useStore, applyFilters, laneList } from './useStore';
+import { useStore, applyFilters, laneList, authorList } from './useStore';
 
 /** Builds a wire-format CommitNode with sensible defaults for tests. */
 function makeNode(overrides: Partial<CommitNode> = {}): CommitNode {
@@ -36,6 +36,7 @@ describe('useStore', () => {
       serverHits: null,
       tagsOnly: false,
       hiddenLanes: [],
+      hiddenAuthors: [],
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
@@ -202,12 +203,69 @@ describe('useStore', () => {
     });
   });
 
+  describe('per-author visibility', () => {
+    // Bob authors a plain commit (lane 1); structural A/D remain Alice's.
+    const bobCommit = makeNode({
+      hash: '1_bob',
+      short_hash: 'bob',
+      author: 'Bob',
+      message: 'bob plain work',
+      parents: ['1_a'],
+      lane: 1,
+    });
+
+    it('toggleAuthor hides that author\'s plain commits but retains structural splits/merges', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD, bobCommit]);
+      useStore.getState().toggleAuthor('Bob');
+      expect(useStore.getState().hiddenAuthors).toEqual(['Bob']);
+
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(visible).not.toContain('1_bob'); // hidden author, non-structural
+      expect(visible).toContain('1_a'); // split retained
+      expect(visible).toContain('1_d'); // merge retained
+      expect(visible).toContain('1_b'); // Alice's plain commit still visible
+    });
+
+    it('hiding an author still retains that author\'s structural bounds', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      // Hide Alice — every node is hers, but A (split) and D (merge) are structural.
+      useStore.getState().toggleAuthor('Alice');
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(visible).toContain('1_a');
+      expect(visible).toContain('1_d');
+      expect(visible).not.toContain('1_b'); // plain Alice commit dropped
+      expect(visible).not.toContain('1_c');
+    });
+
+    it('toggleAuthor is reversible and showAllAuthors clears all hidden authors', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD, bobCommit]);
+      useStore.getState().toggleAuthor('Bob');
+      useStore.getState().toggleAuthor('Bob'); // toggle back on
+      expect(useStore.getState().hiddenAuthors).toEqual([]);
+
+      useStore.getState().toggleAuthor('Bob');
+      useStore.getState().toggleAuthor('Alice');
+      expect(useStore.getState().hiddenAuthors).toEqual(['Alice', 'Bob']); // sorted
+      useStore.getState().showAllAuthors();
+      expect(useStore.getState().hiddenAuthors).toEqual([]);
+      expect(useStore.getState().visibleNodes).toHaveLength(5);
+    });
+  });
+
   describe('applyFilters composition (pure)', () => {
     const tagged = makeNode({ hash: '1_t', short_hash: 't', message: 'alpha release', tag: 'v1.0.0', lane: 1 });
 
     it('returns all nodes when no filter is active', () => {
       const all = [nodeA, nodeB, nodeC, nodeD];
-      expect(applyFilters(all, { searchQuery: '', serverHits: null, tagsOnly: false, hiddenLanes: [] })).toBe(all);
+      expect(
+        applyFilters(all, {
+          searchQuery: '',
+          serverHits: null,
+          tagsOnly: false,
+          hiddenLanes: [],
+          hiddenAuthors: [],
+        }),
+      ).toBe(all);
     });
 
     it('composes tags-only AND search with structural retention', () => {
@@ -217,6 +275,7 @@ describe('useStore', () => {
         serverHits: null,
         tagsOnly: true,
         hiddenLanes: [],
+        hiddenAuthors: [],
       }).map((n) => n.hash);
       // tagged AND matches "alpha"
       expect(visible).toContain('1_t');
@@ -228,9 +287,42 @@ describe('useStore', () => {
       expect(visible).toContain('1_d');
     });
 
+    it('composes a hidden author AND search with structural retention', () => {
+      const bobCommit = makeNode({
+        hash: '1_bob',
+        short_hash: 'bob',
+        author: 'Bob',
+        message: 'alpha by bob',
+        parents: ['1_a'],
+        lane: 1,
+      });
+      const all = [nodeA, nodeB, nodeC, nodeD, bobCommit];
+      const visible = applyFilters(all, {
+        searchQuery: 'alpha',
+        serverHits: null,
+        tagsOnly: false,
+        hiddenLanes: [],
+        hiddenAuthors: ['Bob'],
+      }).map((n) => n.hash);
+      // nodeB matches "alpha" (message "feature alpha work") and is Alice's.
+      expect(visible).toContain('1_b');
+      // bobCommit matches "alpha" too, but Bob is hidden so it drops.
+      expect(visible).not.toContain('1_bob');
+      // structural retained regardless of the hidden author.
+      expect(visible).toContain('1_a');
+      expect(visible).toContain('1_d');
+    });
+
     it('laneList returns sorted unique lanes', () => {
       expect(laneList([nodeA, nodeB, nodeC, nodeD])).toEqual([0, 1]);
       expect(laneList([])).toEqual([]);
+    });
+
+    it('authorList returns sorted unique authors', () => {
+      const bob = makeNode({ hash: '1_bob', author: 'Bob' });
+      const carol = makeNode({ hash: '1_car', author: 'Carol' });
+      expect(authorList([carol, nodeA, bob, nodeB])).toEqual(['Alice', 'Bob', 'Carol']);
+      expect(authorList([])).toEqual([]);
     });
   });
 
