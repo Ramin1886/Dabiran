@@ -2,7 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { CommitNode } from '@git-viz/shared-types';
 import App from './App';
-import { login, fetchTopology, fetchDependencyLinks, searchCommits } from './api/client';
+import {
+  login,
+  fetchTopology,
+  fetchDependencyLinks,
+  searchCommits,
+  fetchViews,
+  saveView,
+  deleteView,
+} from './api/client';
 import { useStore } from './store/useStore';
 import { useCRDT } from './store/useCRDT';
 
@@ -13,6 +21,9 @@ vi.mock('./api/client', () => ({
   fetchTopology: vi.fn(),
   fetchDependencyLinks: vi.fn(),
   searchCommits: vi.fn(),
+  fetchViews: vi.fn(),
+  saveView: vi.fn(),
+  deleteView: vi.fn(),
 }));
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -42,6 +53,9 @@ describe('App', () => {
     vi.mocked(fetchTopology).mockReset().mockResolvedValue([makeNode()]);
     vi.mocked(fetchDependencyLinks).mockReset().mockResolvedValue([]);
     vi.mocked(searchCommits).mockReset().mockResolvedValue([]);
+    vi.mocked(fetchViews).mockReset().mockResolvedValue([]);
+    vi.mocked(saveView).mockReset().mockResolvedValue({ id: 1, name: 'v', state: '{}' });
+    vi.mocked(deleteView).mockReset().mockResolvedValue();
     useStore.setState({
       nodes: [],
       visibleNodes: [],
@@ -252,5 +266,91 @@ describe('App', () => {
 
     expect(useStore.getState().hiddenAuthors).toEqual(['Bob']);
     expect(useStore.getState().visibleNodes.map((n) => n.hash)).not.toContain('1_b');
+  });
+
+  describe('saved canvas views', () => {
+    it('Save persists the serialized current view-state (including active filters)', async () => {
+      render(<App />);
+      await screen.findByText('Loaded 1 commits');
+
+      // Activate a filter so it must appear in the captured state.
+      fireEvent.click(screen.getByRole('button', { name: 'Tagged commits only' }));
+      expect(useStore.getState().tagsOnly).toBe(true);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
+      fireEvent.change(screen.getByLabelText('View name'), {
+        target: { value: 'My View' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(saveView).toHaveBeenCalledTimes(1);
+      const [name, state, token] = vi.mocked(saveView).mock.calls[0];
+      expect(name).toBe('My View');
+      expect(token).toBe('tok');
+      // state is the serialized snapshot; the active tagsOnly filter is in it.
+      expect(JSON.parse(state).tagsOnly).toBe(true);
+    });
+
+    it('ignores a save with an empty (whitespace) name', async () => {
+      render(<App />);
+      await screen.findByText('Loaded 1 commits');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
+      fireEvent.change(screen.getByLabelText('View name'), { target: { value: '   ' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(saveView).not.toHaveBeenCalled();
+    });
+
+    it('loading a listed view applies it to the store', async () => {
+      const state = JSON.stringify({
+        viewport: { x: 9, y: 9, scale: 4 },
+        searchQuery: 'alpha',
+        tagsOnly: true,
+        hiddenLanes: [],
+        hiddenAuthors: [],
+        recompactLayout: false,
+      });
+      vi.mocked(fetchViews).mockReset().mockResolvedValue([
+        { id: 5, name: 'Saved A', state },
+      ]);
+      render(<App />);
+      await screen.findByText('Loaded 1 commits');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Load view Saved A' }));
+
+      const s = useStore.getState();
+      expect(s.viewportTransform).toEqual({ x: 9, y: 9, scale: 4 });
+      expect(s.searchQuery).toBe('alpha');
+      expect(s.tagsOnly).toBe(true);
+    });
+
+    it('deleting a listed view calls deleteView with its id', async () => {
+      vi.mocked(fetchViews).mockReset().mockResolvedValue([
+        { id: 5, name: 'Saved A', state: '{}' },
+      ]);
+      render(<App />);
+      await screen.findByText('Loaded 1 commits');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete view Saved A' }));
+
+      expect(deleteView).toHaveBeenCalledWith(5, 'tok');
+    });
+
+    it('a saved-views fetch failure does NOT blank the loaded graph or crash', async () => {
+      vi.mocked(fetchViews)
+        .mockReset()
+        .mockRejectedValue(new Error('Views fetch failed with status 500'));
+      render(<App />);
+
+      // The topology still loads despite the best-effort views fetch failing.
+      await screen.findByText('Loaded 1 commits');
+      expect(useStore.getState().nodes).toHaveLength(1);
+      // The failed fetch did not crash the app; no views are listed.
+      fireEvent.click(screen.getByRole('button', { name: 'Saved views' }));
+      expect(screen.getByText('No saved views yet')).toBeTruthy();
+    });
   });
 });

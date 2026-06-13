@@ -1,9 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { repoMapRoom } from '@git-viz/shared-types';
+import type { CanvasView } from '@git-viz/shared-types';
 import { InteractiveCanvas } from './components/Canvas';
 import { CommitPanel } from './components/CommitPanel';
-import { login, fetchTopology, fetchDependencyLinks, searchCommits } from './api/client';
+import {
+  login,
+  fetchTopology,
+  fetchDependencyLinks,
+  searchCommits,
+  fetchViews,
+  saveView,
+  deleteView,
+} from './api/client';
 import { useStore, laneList, authorList } from './store/useStore';
+import {
+  captureViewState,
+  serializeViewState,
+  parseViewState,
+} from './views/viewState';
 import { useCRDT } from './store/useCRDT';
 
 /** Repository ids loaded onto the unified canvas on boot. */
@@ -40,6 +54,9 @@ export default function App() {
   const [status, setStatus] = useState<string>('Authenticating…');
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [authorsOpen, setAuthorsOpen] = useState(false);
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const [views, setViews] = useState<CanvasView[]>([]);
+  const [viewName, setViewName] = useState('');
   const searchQuery = useStore((state) => state.searchQuery);
   const setSearchQuery = useStore((state) => state.setSearchQuery);
   const setServerHits = useStore((state) => state.setServerHits);
@@ -99,6 +116,83 @@ export default function App() {
   };
 
   /**
+   * Best-effort refresh of the saved-views list from the backend. A fetch
+   * failure is surfaced on the HUD status line and must NOT blank the graph or
+   * throw into render, so callers can fire-and-forget it.
+   *
+   * @param token - JWT access token to authenticate the request
+   */
+  const refreshViews = async (token: string): Promise<void> => {
+    try {
+      setViews(await fetchViews(token));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setStatus(`Saved views unavailable: ${message}`);
+    }
+  };
+
+  /**
+   * Captures and serializes the current viewport + filters and persists them as
+   * a named view, then refreshes the list and clears the name input. Empty
+   * names are ignored; errors surface on the HUD status line (never thrown).
+   */
+  const handleSaveView = async (): Promise<void> => {
+    const name = viewName.trim();
+    if (!name) return;
+    const token = useStore.getState().token;
+    if (!token) {
+      setStatus('Save unavailable: not authenticated');
+      return;
+    }
+    try {
+      const state = serializeViewState(captureViewState());
+      await saveView(name, state, token);
+      setViewName('');
+      await refreshViews(token);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setStatus(`Error: ${message}`);
+    }
+  };
+
+  /**
+   * Loads a saved view: safely parses its stored state and, when valid, applies
+   * it to the store (viewport + filters) in one atomic update. A malformed
+   * stored state is ignored with a HUD note rather than crashing the canvas.
+   *
+   * @param view - the saved view to restore
+   */
+  const handleLoadView = (view: CanvasView): void => {
+    const parsed = parseViewState(view.state);
+    if (!parsed) {
+      setStatus(`Could not load view "${view.name}": corrupt state`);
+      return;
+    }
+    useStore.getState().applyView(parsed);
+  };
+
+  /**
+   * Deletes a saved view by id, then refreshes the list. Errors surface on the
+   * HUD status line (never thrown into render).
+   *
+   * @param view - the saved view to delete
+   */
+  const handleDeleteView = async (view: CanvasView): Promise<void> => {
+    const token = useStore.getState().token;
+    if (!token) {
+      setStatus('Delete unavailable: not authenticated');
+      return;
+    }
+    try {
+      await deleteView(view.id, token);
+      await refreshViews(token);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setStatus(`Error: ${message}`);
+    }
+  };
+
+  /**
    * Boot effect: authenticate, fetch the commit topology for the default
    * repositories into the store, and connect the Yjs room. Errors are
    * surfaced on the HUD status line instead of crashing the canvas.
@@ -118,6 +212,11 @@ export default function App() {
         // Lift the token into the store so on-demand handlers (server search)
         // can read it without prop-drilling through the boot effect.
         useStore.getState().setToken(auth.access_token);
+
+        // Best-effort load of the saved-views list. A failure here only notes
+        // the HUD status line (handled in refreshViews) and never blanks the
+        // graph or blocks the topology load below.
+        void refreshViews(auth.access_token);
 
         setStatus('Loading topology…');
         const nodes = await fetchTopology(DEFAULT_REPO_IDS, auth.access_token);
@@ -434,6 +533,133 @@ export default function App() {
                     </label>
                   );
                 })}
+              </div>
+            )}
+          </div>
+
+          {/* Saved canvas views: save/load/delete named snapshots of the
+              current viewport + active filters. */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setViewsOpen((open) => !open)}
+              aria-expanded={viewsOpen}
+              aria-label="Saved views"
+              style={{
+                ...hudControlStyle,
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              Views{views.length > 0 ? ` (${views.length})` : ''} ▾
+            </button>
+
+            {viewsOpen && (
+              <div
+                role="menu"
+                aria-label="Saved views"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  minWidth: '220px',
+                  maxHeight: '320px',
+                  overflowY: 'auto',
+                  background: 'rgba(15, 23, 42, 0.92)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  padding: '10px',
+                  boxShadow: '0 20px 40px -12px rgba(0,0,0,0.6)',
+                }}
+              >
+                {/* Save row: name the current view and persist it. */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleSaveView();
+                  }}
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    marginBottom: '8px',
+                    paddingBottom: '8px',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={viewName}
+                    onChange={(e) => setViewName(e.target.value)}
+                    placeholder="View name…"
+                    aria-label="View name"
+                    style={{ ...hudControlStyle, flex: 1, minWidth: 0, padding: '4px 8px' }}
+                  />
+                  <button
+                    type="submit"
+                    style={{
+                      ...hudControlStyle,
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Save
+                  </button>
+                </form>
+
+                {views.length === 0 ? (
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                    No saved views yet
+                  </span>
+                ) : (
+                  views.map((view) => (
+                    <div
+                      key={view.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '4px 2px',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleLoadView(view)}
+                        aria-label={`Load view ${view.name}`}
+                        style={{
+                          ...hudControlStyle,
+                          flex: 1,
+                          minWidth: 0,
+                          textAlign: 'left',
+                          padding: '4px 8px',
+                          fontSize: '0.85rem',
+                          cursor: 'pointer',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {view.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteView(view)}
+                        aria-label={`Delete view ${view.name}`}
+                        style={{
+                          ...hudControlStyle,
+                          padding: '4px 8px',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>

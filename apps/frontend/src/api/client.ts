@@ -1,4 +1,4 @@
-import type { AuthResponse, CommitNode, DependencyLink } from '@git-viz/shared-types';
+import type { AuthResponse, CanvasView, CommitNode, DependencyLink } from '@git-viz/shared-types';
 
 /**
  * A single match from the server-backed deep search endpoint
@@ -133,4 +133,82 @@ export async function searchCommits(
   }
   const body = (await response.json()) as { hits: SearchHit[] };
   return body.hits ?? [];
+}
+
+/**
+ * Fetches the current user's saved canvas views.
+ *
+ * Calls `GET {API_BASE}/api/v1/views` with an `Authorization: Bearer <token>`
+ * header and returns the `views` array from the `{ "views": [...] }` response
+ * envelope per the shared contract. Each {@link CanvasView} carries an opaque,
+ * frontend-owned JSON `state` string (serialized viewport + active filters).
+ *
+ * @param token - JWT access token obtained from {@link login}
+ * @returns the saved canvas views (empty array when the envelope omits `views`)
+ * @throws Error when the response status is not OK (message includes the HTTP
+ *   status so the HUD can surface it without blanking the canvas)
+ */
+export async function fetchViews(token: string): Promise<CanvasView[]> {
+  const response = await fetch(`${API_BASE}/api/v1/views`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`Views fetch failed with status ${response.status}`);
+  }
+  const body = (await response.json()) as { views: CanvasView[] };
+  return body.views ?? [];
+}
+
+/**
+ * Persists a new named canvas view (viewport + active filters snapshot).
+ *
+ * Calls `POST {API_BASE}/api/v1/views` with an `Authorization: Bearer <token>`
+ * header and a JSON body `{ name, state }`, where `state` is the frontend-owned
+ * serialized view-state string (see {@link CanvasView}). Returns the created
+ * view (with its server-assigned id) from the `201` response.
+ *
+ * @param name - human-readable label the user gave the saved view
+ * @param state - serialized view-state JSON string (opaque to the backend)
+ * @param token - JWT access token obtained from {@link login}
+ * @returns the created {@link CanvasView} including its server-assigned id
+ * @throws Error when the response status is not OK
+ */
+export async function saveView(
+  name: string,
+  state: string,
+  token: string,
+): Promise<CanvasView> {
+  const response = await fetch(`${API_BASE}/api/v1/views`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name, state }),
+  });
+  if (!response.ok) {
+    throw new Error(`View save failed with status ${response.status}`);
+  }
+  return (await response.json()) as CanvasView;
+}
+
+/**
+ * Deletes a saved canvas view by its server-assigned id.
+ *
+ * Calls `DELETE {API_BASE}/api/v1/views/{id}` with an
+ * `Authorization: Bearer <token>` header. The backend responds `204 No Content`
+ * on success; this helper resolves with no value.
+ *
+ * @param id - server-assigned id of the view to delete
+ * @param token - JWT access token obtained from {@link login}
+ * @throws Error when the response status is not OK
+ */
+export async function deleteView(id: number, token: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/v1/views/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`View delete failed with status ${response.status}`);
+  }
 }

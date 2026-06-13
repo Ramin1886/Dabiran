@@ -41,6 +41,11 @@ describe('NodeEngine', () => {
       nodes: [],
       visibleNodes: [],
       searchQuery: '',
+      serverHits: null,
+      tagsOnly: false,
+      hiddenLanes: [],
+      hiddenAuthors: [],
+      recompactLayout: false,
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
@@ -233,6 +238,36 @@ describe('NodeEngine', () => {
       expect(screen.queryByText('github.com/acme/shared')).toBeNull();
       // Only the single repo2 node glyph.
       expect(screen.getAllByTestId('pixi-graphics')).toHaveLength(1);
+    });
+  });
+
+  describe('recompact layout (wasm engine)', () => {
+    // A node placed far off-screen by its backend x_offset. Its child shares
+    // the same date, so client recompaction maps both back to the origin.
+    const root = makeNode({ hash: '1_a', short_hash: 'rroot', x_offset: 0, lane: 0 });
+    const far = makeNode({
+      hash: '1_far',
+      short_hash: 'rfar',
+      x_offset: 50_000, // off-screen under the backend coordinates
+      lane: 0,
+      parents: ['1_a'],
+    });
+
+    it('uses backend coordinates when recompact is off (far node culled)', () => {
+      act(() => useStore.getState().setNodes([root, far]));
+      render(<NodeEngine />);
+      expect(screen.queryByText('rfar')).toBeNull();
+    });
+
+    it('recomputes positions client-side when recompact is on (far node returns)', () => {
+      act(() => {
+        useStore.getState().setNodes([root, far]);
+        useStore.setState({ recompactLayout: true });
+      });
+      render(<NodeEngine />);
+      // Recompaction lays both nodes near the origin (shared date), so the
+      // formerly off-screen node is now rendered.
+      expect(screen.getByText('rfar')).toBeTruthy();
     });
   });
 });

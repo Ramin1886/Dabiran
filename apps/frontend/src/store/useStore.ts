@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { CommitNode, DependencyLink } from '@git-viz/shared-types';
 import type { ViewportTransform } from '@git-viz/utils';
+import type { CanvasViewState } from '../views/viewState';
 
 /** Re-exported for convenience so canvas modules share one import site. */
 export type { CommitNode };
@@ -62,6 +63,14 @@ interface AppState {
   showAllAuthors: () => void;
   /** Toggles client-side layout recompaction of the visible subset. */
   toggleRecompact: () => void;
+  /**
+   * Atomically restores a saved {@link CanvasViewState}: sets the viewport and
+   * every active filter (searchQuery, tagsOnly, hiddenLanes, hiddenAuthors,
+   * recompactLayout) in one update, clears any transient server-search result,
+   * then recomputes the visible set ONCE so loading a view never leaves stale
+   * visibility or triggers redundant recomputes.
+   */
+  applyView: (state: CanvasViewState) => void;
 }
 
 /**
@@ -300,5 +309,27 @@ export const useStore = create<AppState>((set, get) => {
      * does not trigger a filter recompute.
      */
     toggleRecompact: () => set({ recompactLayout: !get().recompactLayout }),
+
+    /**
+     * Restores a saved view: sets the viewport and every filter atomically
+     * (clearing any active server-search result) and recomputes visibility
+     * exactly once so the canvas refreshes in a single pass.
+     */
+    applyView: (state) => {
+      set({
+        searchQuery: state.searchQuery,
+        serverHits: null,
+        tagsOnly: state.tagsOnly,
+        hiddenLanes: [...state.hiddenLanes],
+        hiddenAuthors: [...state.hiddenAuthors],
+        recompactLayout: state.recompactLayout,
+        viewportTransform: {
+          x: state.viewport.x,
+          y: state.viewport.y,
+          scale: state.viewport.scale,
+        },
+      });
+      recompute();
+    },
   };
 });

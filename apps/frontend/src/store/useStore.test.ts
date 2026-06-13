@@ -37,12 +37,25 @@ describe('useStore', () => {
       tagsOnly: false,
       hiddenLanes: [],
       hiddenAuthors: [],
+      recompactLayout: false,
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
       token: null,
       dependencyLinks: [],
     });
+  });
+
+  it('toggleRecompact flips the flag without changing visibleNodes', () => {
+    useStore.getState().setNodes([nodeA, nodeB]);
+    const before = useStore.getState().visibleNodes;
+    expect(useStore.getState().recompactLayout).toBe(false);
+    useStore.getState().toggleRecompact();
+    expect(useStore.getState().recompactLayout).toBe(true);
+    // Recompaction only affects rendered coordinates, not the visible set.
+    expect(useStore.getState().visibleNodes).toBe(before);
+    useStore.getState().toggleRecompact();
+    expect(useStore.getState().recompactLayout).toBe(false);
   });
 
   it('setNodes populates both nodes and visibleNodes', () => {
@@ -336,5 +349,63 @@ describe('useStore', () => {
     expect(useStore.getState().selectedNode).toBe('1_b');
     useStore.getState().setDrawingState(true);
     expect(useStore.getState().drawingState).toBe(true);
+  });
+
+  describe('applyView (restore a saved view)', () => {
+    it('sets the viewport and every filter field atomically', () => {
+      useStore.getState().setServerHits(['1_x']); // transient dimension to clear
+      useStore.getState().applyView({
+        viewport: { x: 10, y: 20, scale: 3 },
+        searchQuery: 'alpha',
+        tagsOnly: true,
+        hiddenLanes: [1],
+        hiddenAuthors: ['Bob'],
+        recompactLayout: true,
+      });
+
+      const s = useStore.getState();
+      expect(s.viewportTransform).toEqual({ x: 10, y: 20, scale: 3 });
+      expect(s.searchQuery).toBe('alpha');
+      expect(s.serverHits).toBeNull(); // transient result cleared
+      expect(s.tagsOnly).toBe(true);
+      expect(s.hiddenLanes).toEqual([1]);
+      expect(s.hiddenAuthors).toEqual(['Bob']);
+      expect(s.recompactLayout).toBe(true);
+    });
+
+    it('recomputes visibleNodes once so a restored searchQuery filters the set', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      useStore.getState().applyView({
+        viewport: { x: 0, y: 0, scale: 1 },
+        searchQuery: 'alpha',
+        tagsOnly: false,
+        hiddenLanes: [],
+        hiddenAuthors: [],
+        recompactLayout: false,
+      });
+
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(visible).toContain('1_b'); // "feature alpha work" matches
+      expect(visible).toContain('1_a'); // split retained
+      expect(visible).toContain('1_d'); // merge retained
+      expect(visible).not.toContain('1_c'); // plain non-match dropped
+    });
+
+    it('recomputes visibleNodes so restored hiddenLanes hide their plain nodes', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      useStore.getState().applyView({
+        viewport: { x: 0, y: 0, scale: 1 },
+        searchQuery: '',
+        tagsOnly: false,
+        hiddenLanes: [1],
+        hiddenAuthors: [],
+        recompactLayout: false,
+      });
+
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(visible).not.toContain('1_c'); // lane 1, plain → hidden
+      expect(visible).toContain('1_a'); // split retained
+      expect(visible).toContain('1_d'); // merge retained
+    });
   });
 });

@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AuthResponse, CommitNode, DependencyLink } from '@git-viz/shared-types';
+import type {
+  AuthResponse,
+  CanvasView,
+  CommitNode,
+  DependencyLink,
+} from '@git-viz/shared-types';
 import {
   login,
   fetchTopology,
   fetchDependencyLinks,
   searchCommits,
+  fetchViews,
+  saveView,
+  deleteView,
   API_BASE,
 } from './client';
 
@@ -136,6 +144,73 @@ describe('api client', () => {
     it('propagates network failures', async () => {
       fetchMock.mockRejectedValueOnce(new TypeError('offline'));
       await expect(searchCommits('q', ['1'], 't')).rejects.toThrow('offline');
+    });
+  });
+
+  describe('fetchViews', () => {
+    it('GETs /api/v1/views with a Bearer header and returns the views envelope', async () => {
+      const views: CanvasView[] = [{ id: 1, name: 'Overview', state: '{}' }];
+      fetchMock.mockResolvedValueOnce(okResponse({ views }));
+
+      const result = await fetchViews('my-token');
+
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/views', {
+        headers: { Authorization: 'Bearer my-token' },
+      });
+      expect(result).toEqual(views);
+    });
+
+    it('returns an empty array when the response omits views', async () => {
+      fetchMock.mockResolvedValueOnce(okResponse({}));
+      const result = await fetchViews('t');
+      expect(result).toEqual([]);
+    });
+
+    it('propagates non-OK statuses as errors', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+      await expect(fetchViews('t')).rejects.toThrow('Views fetch failed with status 500');
+    });
+  });
+
+  describe('saveView', () => {
+    it('POSTs /api/v1/views with a name+state body and a Bearer header, returning the view', async () => {
+      const created: CanvasView = { id: 7, name: 'Release', state: '{"a":1}' };
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 201, json: async () => created });
+
+      const result = await saveView('Release', '{"a":1}', 'my-token');
+
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/views', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer my-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'Release', state: '{"a":1}' }),
+      });
+      expect(result).toEqual(created);
+    });
+
+    it('propagates non-OK statuses as errors', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 422, json: async () => ({}) });
+      await expect(saveView('n', 's', 't')).rejects.toThrow('View save failed with status 422');
+    });
+  });
+
+  describe('deleteView', () => {
+    it('DELETEs /api/v1/views/{id} with a Bearer header', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 204, json: async () => ({}) });
+
+      await deleteView(42, 'my-token');
+
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/views/42', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer my-token' },
+      });
+    });
+
+    it('propagates non-OK statuses as errors', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) });
+      await expect(deleteView(1, 't')).rejects.toThrow('View delete failed with status 404');
     });
   });
 });
