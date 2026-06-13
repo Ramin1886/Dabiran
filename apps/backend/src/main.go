@@ -56,6 +56,24 @@ func newMux(apiServer *api.APIServer, hub *ws.Hub) *http.ServeMux {
 	return mux
 }
 
+// withCORS wraps h with permissive CORS headers so the browser frontend
+// (served from a different origin in development, e.g. http://localhost:3000)
+// can call the API with an Authorization header. Preflight OPTIONS requests
+// are answered immediately with 204. In production, front the API with a
+// reverse proxy and tighten the allowed origin.
+func withCORS(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // main wires configuration from the environment, starts the websocket hub,
 // and serves HTTP on $PORT (default 8080).
 func main() {
@@ -83,7 +101,7 @@ func main() {
 		port = "8080"
 	}
 	log.Printf("Starting server on port %s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := http.ListenAndServe(":"+port, withCORS(mux)); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

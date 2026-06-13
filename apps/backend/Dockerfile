@@ -18,7 +18,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main ./src
 # Run Stage
 FROM docker.io/library/alpine:latest
 
-RUN apk --no-cache add ca-certificates
+# ca-certificates for HTTPS git remotes; git provides the upload-pack/
+# receive-pack helpers go-git's local (file://) transport shells out to.
+RUN apk --no-cache add ca-certificates git
 
 WORKDIR /root/
 

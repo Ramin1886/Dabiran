@@ -68,3 +68,46 @@ func TestWebsocketRoutesAreRegistered(t *testing.T) {
 		}
 	}
 }
+
+func TestWithCORSAnswersPreflight(t *testing.T) {
+	ts := httptest.NewServer(withCORS(newTestMux(t)))
+	defer ts.Close()
+
+	// A browser preflight (no Authorization header) must be answered 204 with
+	// CORS headers, so the real request that carries Authorization is allowed.
+	req, _ := http.NewRequest(http.MethodOptions, ts.URL+"/api/v1/topology", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	req.Header.Set("Access-Control-Request-Headers", "authorization")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight status: got %d, want 204", resp.StatusCode)
+	}
+	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("missing Access-Control-Allow-Origin on preflight")
+	}
+	if h := resp.Header.Get("Access-Control-Allow-Headers"); h == "" {
+		t.Fatal("missing Access-Control-Allow-Headers on preflight")
+	}
+}
+
+func TestWithCORSPassesThroughGet(t *testing.T) {
+	ts := httptest.NewServer(withCORS(newTestMux(t)))
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("health via cors: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("health via cors: got %d, want 200", resp.StatusCode)
+	}
+	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("missing CORS header on passthrough GET")
+	}
+}
