@@ -18,6 +18,7 @@ import (
 	"github.com/ramin1886/git-interactive-history/backend/src/crypto"
 	"github.com/ramin1886/git-interactive-history/backend/src/gitengine"
 	"github.com/ramin1886/git-interactive-history/backend/src/search"
+	"github.com/ramin1886/git-interactive-history/backend/src/secrets"
 )
 
 // Searcher is the subset of the Meilisearch client the API depends on. It is
@@ -89,7 +90,7 @@ func (s *APIServer) openRepository(ctx context.Context, id string) (*git.Reposit
 			if err := row.Scan(&url, &authType, &encrypted); err == nil {
 				secret := ""
 				if encrypted != "" {
-					key, kerr := crypto.MasterKey()
+					key, kerr := secrets.ResolveMasterKey(ctx)
 					if kerr != nil {
 						return nil, kerr
 					}

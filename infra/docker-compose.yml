@@ -35,6 +35,30 @@ services:
       retries: 10
     restart: unless-stopped
 
+  vault:
+    # DEV-ONLY HashiCorp Vault. Fully-qualified for rootless Podman (no
+    # unqualified-search registries). Runs in `-dev` mode: storage is IN-MEMORY
+    # and a root token is fixed, so ALL data (including the master key) is lost
+    # on restart. The operator MUST seed the repo-credential key after start:
+    #   vault kv put secret/git-viz repo_cred_key=<base64 of 32 bytes>
+    # (e.g. `head -c 32 /dev/urandom | base64`). NOT for production.
+    image: docker.io/hashicorp/vault:1.15
+    command: ["server", "-dev"]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "${VAULT_TOKEN:-root}"
+      # Bind the dev listener to all interfaces so the backend can reach it.
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:8200/v1/sys/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: ../apps/backend
@@ -53,6 +77,13 @@ services:
       # In-cluster Meilisearch service for full-text commit search.
       MEILI_URL: "${MEILI_URL:-http://meilisearch:7700}"
       MEILI_MASTER_KEY: "${MEILI_MASTER_KEY:-devkey}"
+      # HashiCorp Vault for the AES-256 repo-credential master key. When both
+      # VAULT_ADDR and VAULT_TOKEN are set the backend resolves the key from
+      # Vault (fail-closed); when empty it falls back to REPO_CRED_KEY/dev key.
+      # Defaulting via ${...:-} keeps the backend booting without Vault.
+      VAULT_ADDR: "${VAULT_ADDR:-http://vault:8200}"
+      VAULT_TOKEN: "${VAULT_TOKEN:-}"
+      VAULT_KV_PATH: "${VAULT_KV_PATH:-secret/data/git-viz}"
     volumes:
       # Bare-repo cache used by the Git engine (cwd/repos inside the
       # container, see docs/local-setup.md debugging notes).

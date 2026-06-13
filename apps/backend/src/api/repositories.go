@@ -6,6 +6,7 @@ import (
 
 	"github.com/ramin1886/git-interactive-history/backend/src/auth"
 	"github.com/ramin1886/git-interactive-history/backend/src/crypto"
+	"github.com/ramin1886/git-interactive-history/backend/src/secrets"
 )
 
 // repositoryRequest is the JSON body accepted by POST /api/v1/repositories.
@@ -59,7 +60,7 @@ func (s *APIServer) CreateRepository(w http.ResponseWriter, r *http.Request) {
 
 	var encrypted string
 	if req.AuthSecret != "" {
-		key, err := crypto.MasterKey()
+		key, err := secrets.ResolveMasterKey(r.Context())
 		if err != nil {
 			http.Error(w, "credential encryption unavailable", http.StatusInternalServerError)
 			return
