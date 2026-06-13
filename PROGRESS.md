@@ -90,7 +90,5 @@ All specified roadmap features are now implemented (see
 
 ## Next steps
 
-1. Selective branch-visibility toggles in the HUD.
-2. Periodic compaction of the `yjs_updates` log into snapshots.
-3. Schedule the dependency worker (cron/webhook) instead of manual runs.
-4. Rust → WASM math engine for very large graphs.
+1. Periodic compaction of the `yjs_updates` log into snapshots.
+2. Schedule the dependency worker (cron/webhook) instead of manual runs.

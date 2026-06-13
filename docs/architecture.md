@@ -22,9 +22,8 @@ Operational constraints:
   an HTTPS/WSS reverse proxy in front of the backend and frontend services.
 * **Credential handling** — repository credentials are encrypted with
   AES-256-GCM (`src/crypto`) before persistence. A dedicated secrets
-  management layer (e.g. HashiCorp Vault) is the production target for the
-  master keys so the backend never stores keys alongside tenant data
-  (roadmap item).
+  management layer (HashiCorp Vault) is integrated to resolve the master keys
+  so the backend never stores keys alongside tenant data.
 
 ```mermaid
 graph TD
@@ -66,11 +65,11 @@ locks or merge conflicts:
   are commutative, concurrent edits from different browsers converge
   deterministically.
 
-> **Design limitation (documented in `src/ws`):** the relay does not
-> interpret the Yjs sync protocol and keeps no server-side document copy.
-> Peers answer each other's sync steps, so a client that is alone in a room
-> receives no initial state. Server-side document snapshots to PostgreSQL
-> are the planned remedy (see roadmap).
+> **Collaboration state persistence:** the relay does not parse the Yjs binary
+> protocol but persists every inbound update verbatim in the database (`yjs_updates`),
+> and replays this append-only log to a lone client when they join the room so that
+> previously-drawn annotations survive disconnects. Compaction of this log is planned
+> (see roadmap).
 
 ```mermaid
 sequenceDiagram
