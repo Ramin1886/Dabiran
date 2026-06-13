@@ -20,6 +20,7 @@ export class WebsocketProvider {
 
   disconnect = vi.fn();
   destroy = vi.fn();
+  on = vi.fn();
 
   constructor(url: string, roomname: string, doc: any) {
     this.url = url;

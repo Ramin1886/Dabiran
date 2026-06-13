@@ -244,3 +244,33 @@ export async function deleteView(id: number, token: string): Promise<void> {
     throw new Error(`View delete failed with status ${response.status}`);
   }
 }
+
+/**
+ * Compacts a collaboration room's update history on the server.
+ *
+ * Sends the fully merged Yjs document state as a single binary update to
+ * `POST {API_BASE}/api/v1/rooms/{room}/compact` with a Bearer token.
+ * This collapses the append-only database update log into a single row.
+ *
+ * @param room - name of the room to compact
+ * @param state - Yjs document state serialized as a single update
+ * @param token - JWT access token obtained from login
+ * @throws Error when the response status is not OK
+ */
+export async function compactRoom(
+  room: string,
+  state: Uint8Array,
+  token: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/v1/rooms/${room}/compact`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+    },
+    body: state,
+  });
+  if (!response.ok) {
+    throw new Error(`Room compaction failed with status ${response.status}`);
+  }
+}

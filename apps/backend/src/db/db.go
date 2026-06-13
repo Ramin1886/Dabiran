@@ -80,7 +80,17 @@ CREATE TABLE IF NOT EXISTS annotations (
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS auth_type TEXT NOT NULL DEFAULT '';
 
 -- Ensure teams.name is unique for databases created before the constraint was added.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_name_unique ON teams(name);
+-- Deduplicate any existing duplicate names by appending the ID before index creation.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = 'idx_teams_name_unique' AND n.nspname = 'public') THEN
+        UPDATE teams t SET name = t.name || '_' || t.id
+        WHERE t.id NOT IN (
+            SELECT MIN(id) FROM teams GROUP BY name
+        );
+        CREATE UNIQUE INDEX idx_teams_name_unique ON teams(name);
+    END IF;
+END $$;
 
 -- Append-only log of raw Yjs update bytes per collaboration room. The ws
 -- relay inserts one row per inbound binary frame and replays them in id order

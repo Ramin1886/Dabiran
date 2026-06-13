@@ -124,9 +124,14 @@ func TestIngestDependencyLinksForbiddenWhenFromRepoOutsideTeam(t *testing.T) {
 	// able to attach dependency links keyed to it.
 	ctx := context.Background()
 	var foreignUser, foreignTeam int
-	pool.QueryRow(ctx, `INSERT INTO users (email, name) VALUES ('dep-foreign@example.com', 'F')
-		ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name RETURNING id`).Scan(&foreignUser)
-	pool.QueryRow(ctx, `INSERT INTO teams (name, owner_id) VALUES ('dep-foreign-team', $1) RETURNING id`, foreignUser).Scan(&foreignTeam)
+	if err := pool.QueryRow(ctx, `INSERT INTO users (email, name) VALUES ('dep-foreign@example.com', 'F')
+		ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name RETURNING id`).Scan(&foreignUser); err != nil {
+		t.Fatalf("failed to insert foreign user: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO teams (name, owner_id) VALUES ('dep-foreign-team', $1)
+		ON CONFLICT (name) DO UPDATE SET owner_id = EXCLUDED.owner_id RETURNING id`, foreignUser).Scan(&foreignTeam); err != nil {
+		t.Fatalf("failed to insert foreign team: %v", err)
+	}
 	foreignRepo := seedRepo(t, pool, foreignTeam, "dep-foreign-repo")
 	t.Cleanup(func() {
 		pool.Exec(ctx, `DELETE FROM teams WHERE id = $1`, foreignTeam)

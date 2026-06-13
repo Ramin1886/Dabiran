@@ -86,7 +86,7 @@ implemented and covered by the test suites.
 
 ### Collaboration & Automation Enhancements
 
-- [ ] **Periodic compaction of the `yjs_updates` log into snapshots** — compacting the append-only updates database log to prevent unbounded database growth.
+- [x] **Periodic compaction of the `yjs_updates` log into snapshots** — compacting the append-only updates database log to prevent unbounded database growth.
 - [x] **Schedule the dependency worker (cron/webhook)** — automating the execution of the Rust `git-dep-worker` on push events or cron schedules instead of requiring manual execution.
 
 ### Multi-provider Git support

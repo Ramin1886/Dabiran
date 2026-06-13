@@ -2,6 +2,8 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { create } from 'zustand';
 import type { AnnotationVector, CursorState } from '@git-viz/shared-types';
+import { useStore } from './useStore';
+import { compactRoom } from '../api/client';
 
 /** Name of the shared Y.Array holding persisted drawing vectors. */
 const ANNOTATIONS_KEY = 'annotations';
@@ -88,6 +90,30 @@ export const useCRDT = create<CRDTState>((set, get) => {
           }
         });
         set({ cursors: newCursors });
+      });
+
+      // Compaction trigger: periodically compact the append-only log to PostgreSQL
+      // once 50 mutations (local or remote) are made after initial synchronization.
+      let isSynced = false;
+      let updatesSinceCompacted = 0;
+
+      newProvider.on('sync', (synced: boolean) => {
+        isSynced = synced;
+      });
+
+      ydoc.on('update', () => {
+        if (!isSynced) return;
+        updatesSinceCompacted++;
+        if (updatesSinceCompacted >= 50) {
+          updatesSinceCompacted = 0;
+          const token = useStore.getState().token;
+          if (token) {
+            const state = Y.encodeStateAsUpdate(ydoc);
+            compactRoom(room, state, token).catch((err) => {
+              console.error('Failed to compact room:', err);
+            });
+          }
+        }
       });
 
       set({

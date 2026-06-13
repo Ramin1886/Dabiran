@@ -276,6 +276,7 @@ func (s *APIServer) AddRoutes(mux *http.ServeMux) {
 	// Both require a valid JWT.
 	mux.HandleFunc("/api/v1/views", RequireAuth(s.HandleViews))
 	mux.HandleFunc("/api/v1/views/", RequireAuth(s.DeleteView))
+	mux.HandleFunc("/api/v1/rooms/", RequireAuth(s.CompactRoom))
 	mux.HandleFunc("/api/v1/search", RequireAuth(s.ServeSearch))
 	// GitHub signs webhook bodies (HMAC), so this endpoint is intentionally
 	// not behind RequireAuth.

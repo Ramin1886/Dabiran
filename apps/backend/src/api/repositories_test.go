@@ -60,7 +60,8 @@ func dbServer(t *testing.T) (*httptest.Server, int) {
 		t.Fatalf("seed user: %v", err)
 	}
 	if err := pool.QueryRow(ctx,
-		`INSERT INTO teams (name, owner_id) VALUES ('repo-api-test-team', $1) RETURNING id`,
+		`INSERT INTO teams (name, owner_id) VALUES ('repo-api-test-team', $1)
+		 ON CONFLICT (name) DO UPDATE SET owner_id = EXCLUDED.owner_id RETURNING id`,
 		userID).Scan(&teamID); err != nil {
 		t.Fatalf("seed team: %v", err)
 	}
