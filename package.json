@@ -1,0 +1,15 @@
+{
+  "name": "git-interactive-history",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Collaborative Git Visualization Platform monorepo root binding npm workspaces across apps and shared packages.",
+  "workspaces": [
+    "apps/frontend",
+    "packages/shared-types",
+    "packages/utils"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}

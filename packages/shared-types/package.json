@@ -1,0 +1,16 @@
+{
+  "name": "@git-viz/shared-types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cross-app data contracts mirroring the Go backend JSON wire format (CommitNode, auth payloads, CRDT awareness shapes).",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+apps/backend/main
+apps/backend/go.sum.bak
+
+# Local bare-repo cache used by the Git engine (see docs/local-setup.md)
+apps/backend/repos/
+
+# Environment secrets — use .env.example as the template
+.env
+.env.local
+
+# Editor / OS noise
+.DS_Store
+*.swp
