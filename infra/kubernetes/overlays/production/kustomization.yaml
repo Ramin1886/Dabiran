@@ -6,6 +6,19 @@ namespace: production-git-viz
 resources:
 - ../../base
 
+# Map the placeholder image names used in base/ to the GHCR images the CD
+# pipeline publishes. The deploy job overrides newName/newTag at rollout time
+# via `kustomize edit set image` (which rewrites these entries), so the values
+# below are the committed defaults — replace OWNER with the GHCR owner, or let
+# the pipeline pin the exact owner + release/SHA tag.
+images:
+- name: my-registry.local/git-interactive-backend
+  newName: ghcr.io/OWNER/git-interactive-backend
+  newTag: latest
+- name: my-registry.local/git-interactive-frontend
+  newName: ghcr.io/OWNER/git-interactive-frontend
+  newTag: latest
+
 patches:
 - target:
     kind: Deployment

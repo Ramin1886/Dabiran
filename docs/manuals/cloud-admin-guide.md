@@ -109,12 +109,21 @@ Manifests live in `infra/kubernetes/` (Kustomize: `base/` plus a
 
 ```bash
 # 1. Build and push images to your registry
+#    (or let the CD pipeline publish them to GHCR — see §5.1)
 podman build -t <registry>/git-interactive-backend:latest apps/backend
 podman build -t <registry>/git-interactive-frontend:latest -f apps/frontend/Dockerfile .
 podman push <registry>/git-interactive-backend:latest
 podman push <registry>/git-interactive-frontend:latest
 
-# 2. Point the Deployments at your registry (kustomize images field or edit)
+# 2. Point the Deployments at your registry. The production overlay carries an
+#    `images:` block mapping the base placeholder names
+#    (my-registry.local/git-interactive-{backend,frontend}) to the published
+#    images; edit overlays/production/kustomization.yaml, or run e.g.:
+#      cd infra/kubernetes/overlays/production
+#      kustomize edit set image \
+#        my-registry.local/git-interactive-backend=<registry>/git-interactive-backend:<tag>
+#      kustomize edit set image \
+#        my-registry.local/git-interactive-frontend=<registry>/git-interactive-frontend:<tag>
 
 # 3. Provision real secrets — do NOT ship the placeholder
 kubectl create secret generic git-viz-secrets \
@@ -138,6 +147,77 @@ Notes:
   concern.
 * Expose the frontend Service via your ingress; route `/api` and `/ws`
   (with WebSocket upgrade) to the backend Service.
+
+### 5.1 CI/CD
+
+Two GitHub Actions workflows live in `cicd/`:
+
+| Workflow | File | Trigger | Purpose |
+| :--- | :--- | :--- | :--- |
+| Application Pipeline (CI gate) | `cicd/build.yaml` | push to `main`, pull requests | Go vet/test/build, npm test, frontend build, and Compose + Kustomize manifest validation |
+| Deployment Pipeline (CD) | `cicd/deploy.yaml` | `release: published`, manual `workflow_dispatch` | Build + push images to GHCR, then roll out to Kubernetes |
+
+**Published images.** The CD pipeline builds both images with Docker Buildx
+and pushes them to the GitHub Container Registry under the repository owner
+(lowercased):
+
+| Image | Build context | Tags |
+| :--- | :--- | :--- |
+| `ghcr.io/<owner>/git-interactive-backend` | `apps/backend` | release tag (or short SHA on manual runs) **and** `latest` |
+| `ghcr.io/<owner>/git-interactive-frontend` | repo root `.` (Dockerfile `apps/frontend/Dockerfile`) | release tag (or short SHA on manual runs) **and** `latest` |
+
+The frontend uses the repository root as its build context so the npm
+workspace packages (`@git-viz/*`) resolve during install.
+
+**Pipeline flow.**
+
+```mermaid
+graph LR
+    R[GitHub Release published] --> BP[build-and-push]
+    M[workflow_dispatch manual] --> BP
+    BP -->|push images| GHCR[(ghcr.io)]
+    BP --> D{KUBE_CONFIG set?}
+    D -->|no| S[skip deploy, log + exit 0]
+    D -->|yes| K[kustomize edit set image]
+    K --> A[kubectl apply -k overlays/production]
+```
+
+**Required GitHub repository secrets.**
+
+| Secret | Required | Set by | Description |
+| :--- | :--- | :--- | :--- |
+| `GITHUB_TOKEN` | always | GitHub (built-in) | Used to authenticate to GHCR. The workflow requests `packages: write` / `contents: read`; no manual setup needed |
+| `KUBE_CONFIG` | only to deploy | operator | A **raw (plain-text) kubeconfig** — not base64 — for the target cluster. When unset, the `build-and-push` job still publishes images and the `deploy` job logs a skip and exits cleanly |
+
+Set `KUBE_CONFIG` under *Repository → Settings → Secrets and variables →
+Actions → New repository secret*:
+
+```bash
+# Paste the contents of this file as the KUBE_CONFIG secret value
+cat ~/.kube/config
+```
+
+> The owner segment of the image name is lowercased automatically (GHCR
+> requires lowercase). If your GitHub org/user has uppercase letters the
+> published image still resolves correctly.
+
+**How a deploy happens.**
+
+* *On release* — publish a GitHub Release. `build-and-push` builds and pushes
+  both images tagged with the release `tag_name` and `latest`; if `KUBE_CONFIG`
+  is set, `deploy` pins those tags into the production overlay with
+  `kustomize edit set image` and runs `kubectl apply -k
+  infra/kubernetes/overlays/production`, then waits on the rollout.
+* *Manually* — *Actions → Deployment Pipeline → Run workflow*
+  (`workflow_dispatch`). Images are tagged with the short commit SHA and
+  `latest`; the same deploy gate applies.
+
+The production overlay's `images:` block maps the base placeholder names
+(`my-registry.local/git-interactive-{backend,frontend}`) to the GHCR images,
+which is the single point both the pipeline and a manual
+`kustomize edit set image` rewrite. Replace `OWNER` in
+`overlays/production/kustomization.yaml` with your GHCR owner for committed
+out-of-pipeline applies.
 
 ## 6. Provisioning Repositories
 
