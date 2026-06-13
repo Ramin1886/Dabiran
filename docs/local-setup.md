@@ -1,71 +1,107 @@
-# Local Developer Setup Guide
+# Local Development Setup
 
-This document strictly defines the granular steps required to boot, compile, and iteratively debug the monorepo bounds operating dynamically across the internal framework instances.
+This guide covers booting, compiling, and iterating on the monorepo locally.
 
-## Prerequisite Toolchain
-Before executing the pipeline locally, developers must map natively specific operational binaries into their OS paths:
-*   `Podman` (preferred) or `Docker` daemon mapped logically.
-*   `Go 1.22+` mapped dynamically enabling testing internal `apps/backend/` states directly.
-*   `Node 20+` enabling rapid mapping testing inside `apps/frontend/`.
+## Prerequisites
 
----
+| Tool | Version | Used for |
+| :--- | :--- | :--- |
+| Podman (or Docker) | any recent | PostgreSQL container, full-stack compose runs |
+| Go | 1.22+ | `apps/backend` |
+| Node.js | 20+ | `apps/frontend`, `packages/*` (npm workspaces) |
 
-## 1. Infrastructure Initialization
+## 1. Database
 
-The absolute initial pipeline state enforces standing up the relational database cleanly enabling the API to track internal states cleanly.
+The backend runs without PostgreSQL (it logs a warning and serves topology
+from its local bare-repo cache), but persistence features need it.
 
-### Steps:
-1.  Open absolute `Terminal` or `Shell`.
-2.  Navigate specifically into the configuration root: `cd infra/`
-3.  Execute the orchestrator matrix: 
-    ```bash
-    docker-compose up postgres -d
-    ```
-4.  *(Verification)* Ensure PostgreSQL is cleanly bound natively to `localhost:5432`.
+```bash
+cd infra/
+podman-compose up -d postgres     # or: docker compose up -d postgres
+```
 
----
+Verification: PostgreSQL is reachable on `localhost:5432`
+(`pg_isready -h localhost -U git_viz`).
 
-## 2. Backend Compiling & Setup
+## 2. Backend
 
-The Golang system natively processes complex binary topologies wrapping Git protocols dynamically.
+```bash
+cd apps/backend/
+go mod download
 
-### Steps:
-1.  Navigate into the application boundaries: `cd apps/backend/`
-2.  Install internal module specifications:
-    ```bash
-    go mod download
-    ```
-3.  Inject localized temporary database routing environmental strings:
-    ```bash
-    export DATABASE_URL="postgres://git_viz:secret_password@localhost:5432/git_interactive_history?sslmode=disable"
-    ```
-4.  Boot the localized daemon tracking requests at standard `PORT 8080`:
-    ```bash
-    go run ./src/main.go
-    ```
-5.  *(Verification)* Navigating locally to `http://localhost:8080/health` natively returns `OK`.
+# Optional overrides — see .env.example for the full list and defaults.
+export DATABASE_URL="postgres://git_viz:secret_password@localhost:5432/git_interactive_history?sslmode=disable"
 
----
+go run ./src/main.go
+```
 
-## 3. Frontend WebGL Instantiation
+Verification: `curl http://localhost:8080/health` returns `OK`.
 
-The UI layers bind the `y-websocket` connections testing DOM culling configurations logically mapping PixiJS parameters dynamically.
+### Seeding a repository to visualize
 
-### Steps:
-1.  Open an isolated terminal bounds and navigate into the UI scope: `cd apps/frontend/`
-2.  Install the package dependency matrix matching `package.json` logic exactly:
-    ```bash
-    npm install
-    ```
-3.  Execute Vite hot-reloading configurations seamlessly:
-    ```bash
-    npm run dev
-    ```
-4.  *(Verification)* Navigate the browser instances straight to `http://localhost:3000`. The Glassmorphism interface wrapping the PixiJS visualization canvas will render seamlessly.
+The topology endpoint resolves each requested id first against the
+`repositories` database table (clone-by-URL), then falls back to local bare
+repositories in `apps/backend/repos/`. The quickest seed is a bare clone of
+any repository:
 
----
+```bash
+git clone --bare <any-repo-url-or-path> apps/backend/repos/mock_1.git
+```
 
-## Developer Debugging Notes
+The frontend loads `repo_ids=1` by default, which maps to `mock_1.git`.
+
+### Running backend tests
+
+```bash
+cd apps/backend/
+go vet ./...
+go test ./...
+```
+
+## 3. Frontend
+
+Dependencies are managed by npm workspaces from the **repository root** so
+the shared `@git-viz/*` packages link correctly:
+
+```bash
+npm install            # repo root
+npm run dev -w frontend
+```
+
+Verification: open `http://localhost:3000` — the HUD status line should
+progress through *Authenticating… → Loading topology… → Loaded N commits*,
+and the canvas should render the seeded repository.
+
+| Frontend environment variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `VITE_API_URL` | `http://localhost:8080` | Backend base URL for REST calls |
+
+### Running frontend and package tests
+
+```bash
+npm test               # all workspaces (packages + frontend)
+npm run build -w frontend
+```
+
+## 4. Full Stack via Compose
+
+```bash
+cd infra/
+podman-compose up -d   # postgres + backend + frontend (frontend on :3000)
+```
+
+The frontend image is built from the repository root context because it needs
+`packages/` and the workspace lockfile; the compose file already configures
+this.
+
+## Debugging Notes
 
 > [!WARNING]
-> If testing bare Git clone engines directly inside the Go module without `podman-compose`, ensure the `apps/backend/repos/` volume exists cleanly to shield the operating system from permission boundary restrictions executing dynamic internal file writes.
+> When exercising the bare-git engine directly (outside compose), ensure the
+> `apps/backend/repos/` directory exists and is writable — the engine creates
+> and fetches bare clones there. The directory is git-ignored.
+
+* The backend warns (instead of failing) when PostgreSQL is unreachable;
+  watch its log for `WARNING: database unreachable`.
+* The WebSocket relay is a peer relay: a single connected client receives no
+  initial CRDT state — open two browser windows to observe synchronization.

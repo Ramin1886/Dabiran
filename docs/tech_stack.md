@@ -1,21 +1,62 @@
-# Technology Stack Matrix
+# Technology Stack
 
-Based on the architectural requirements for high concurrency, real-time binary synchronization, and massive graph visualization, the optimal language stack prioritizes memory safety, highly efficient context switching, and strict typing.
+Stack choices are driven by three requirements: high-concurrency WebSocket
+fan-out, deterministic massive-graph processing, and strict typing across the
+client/server boundary.
 
-## 1. Core API, Git Ingestion & WebSocket Relay (Backend)
-**Language of Choice:** Go (Golang)
-*   **Rationale:** Go's lightweight goroutines and M:N scheduler are built specifically for handling thousands of concurrent WebSocket connections (the Yjs CRDT synchronization pipeline) without thread exhaustion. Utilizing `go-git` natively allows the backend to manipulate Git objects entirely in memory without shelling out to OS-level Git binaries or relying on slow C-bindings.
-*   **Use Cases:** REST API definitions, OAuth2 token rotation, Webhook ingress, and the primary WebSocket Hub.
+## Summary Matrix
 
-## 2. Semantic AST Parsers & Graph Aggregation Workers
-**Language of Choice:** Rust
-*   **Rationale:** Parsing Abstract Syntax Trees (`go.mod`, `package.json`, etc.) across thousands of enterprise repositories and dynamically aggregating massive Git Directed Acyclic Graphs (DAGs) requires predictable, deterministic performance. Rust provides C-level speed and zero-cost abstractions with absolute memory safety, eliminating Garbage Collection (GC) pauses that would otherwise degrade worker throughput during heavy computational graph traversals.
+| Layer | Technology | Status |
+| :--- | :--- | :--- |
+| Backend API, git engine, WS relay | Go (net/http, go-git, gorilla/websocket, pgx) | Implemented |
+| Frontend application | TypeScript, React, Vite | Implemented |
+| WebGL rendering | PixiJS v7 with @pixi/react | Implemented |
+| Client state | Zustand | Implemented |
+| CRDT synchronization | Yjs + y-websocket | Implemented |
+| Persistence | PostgreSQL (pgx/v5) | Implemented |
+| Shared contracts | TypeScript workspace packages | Implemented |
+| Containers / orchestration | Podman (Compose), Kubernetes (Kustomize) | Implemented |
+| Graph aggregation / AST workers | Rust | Planned |
+| Canvas math engine | Rust → WebAssembly | Planned |
+| Secrets management | HashiCorp Vault (HCL) | Planned |
 
-## 3. Frontend WebGL Canvas & Client Application Logic
-**Language of Choice:** TypeScript (with WebAssembly/Rust for Math)
-*   **Rationale:** TypeScript is mandatory for enforcing strict data contracts between the Golang backend payloads and the frontend client. The React framework manages the DOM UI, while PixiJS controls the WebGL context.
-*   **Performance Vector:** For calculating complex Bezier splines and executing mathematical bounds culling on tens of thousands of coordinate nodes, the mathematical engine should ideally be written in **Rust and compiled to WebAssembly (WASM)**. This bypasses the V8 JavaScript engine's JIT compilation overhead, feeding binary coordinate arrays directly into the WebGL buffer.
+## 1. Backend — Go
 
-## 4. Infrastructure & Secrets Provisioning
-**Language of Choice:** HCL (HashiCorp Configuration Language) & Go
-*   **Rationale:** HCL is required for defining immutable infrastructure topologies (HashiCorp Vault policies, Podman deployment logic). Any custom infrastructure orchestration operators bridging Podman, PostgreSQL, and Vault should be written in Go, as it is the native language of the cloud-native ecosystem.
+Go's goroutines and M:N scheduler handle thousands of concurrent WebSocket
+connections (the Yjs relay) without thread exhaustion. `go-git` manipulates
+Git objects natively in memory — no shelling out to OS git binaries and no C
+bindings.
+
+Used for: REST endpoints, JWT issuance/validation, GitHub OAuth2 flow,
+bare-repository cloning and fetching, topology extraction and layout, the
+room-scoped WebSocket relay hub, and schema migration.
+
+## 2. Frontend — TypeScript, React, PixiJS
+
+TypeScript enforces the wire contract with the Go backend: the
+`@git-viz/shared-types` package mirrors the Go structs' JSON tags
+(snake_case), so contract drift is a compile error rather than a runtime
+surprise. React manages the DOM HUD; PixiJS owns the WebGL context.
+
+> **Version note:** PixiJS is pinned to v7 together with `@pixi/react` v7
+> because the component layer uses the v7 imperative Graphics API
+> (`lineStyle`/`beginFill`) and the v7 `Stage`/`Container`/`Graphics`
+> components, which PixiJS v8 removed. The rationale is documented in
+> `apps/frontend/vite.config.ts`.
+
+## 3. Graph Workers — Rust (planned)
+
+Parsing dependency manifests (`go.mod`, `package.json`) across thousands of
+repositories and aggregating massive commit DAGs requires deterministic
+performance without garbage-collection pauses. Rust is the selected language
+for these workers; for client-side spline and culling math at scale, the plan
+is Rust compiled to WebAssembly feeding binary coordinate arrays directly to
+the WebGL buffer.
+
+## 4. Infrastructure — Podman, Kubernetes, HCL
+
+Local orchestration uses a Compose file compatible with both Podman and
+Docker. Cluster deployment uses plain Kubernetes manifests composed with
+Kustomize (base + production overlay). Immutable infrastructure definitions
+and Vault policies (HCL/Terraform) have scaffolding under `infra/terraform/`
+and are part of the roadmap.

@@ -1,29 +1,64 @@
-# Feature Development TODO Map
+# Feature Roadmap
 
-The following tasks summarize the explicit technical roadmap finalized executing the `Git Visualization Platform` specifications targeting future sprints explicitly mapping the initial structural prompt requirements.
+Implementation checklist for the platform specification. Checked items are
+implemented and covered by the test suites.
 
 ## 1. Multi-Tenancy & Authorization
-- [x] Implement granular **RBAC Policies** mapping `Admin`, `Team Owner`, and `Team Member` access roles into the PostgreSQL validation layer tracking strict JSON web token checks continuously.
-- [x] Build external **OAuth / Provider App** authentication mapping enabling safe integration tracking dynamic token rotation schemas securely sidestepping isolated SSH key implementations natively.
-- [x] Connect absolute **Team-to-Repo 1:N Structure** restrictions terminating cross-tenant metadata access requests securely explicitly handling PostgreSQL foreign-key restrictions inherently isolating resources natively.
-- [ ] Integrate **Dedicated Secrets Management Layer** (Vault/KMS) explicitly decoupling tenant cryptographic keys and credentials from standard persistence layers securely.
 
-## 2. Visualization Engine Mathematical Models
-- [x] Develop the algorithmic strict **Left-to-Right layout parameter** natively interpreting Unix Epoch bounds determining node coordinate scaling sequentially without overlap regressions securely mapping pixel buffers natively.
-- [x] Execute programmatic **Y-Axis Lane Sorting** defining strict tracking prioritizing `oldest origin` mathematical origin configurations tracking branch creations recursively.
-- [x] Develop dynamic **Bezier Bezier Curving Connectors** defining precise mapping boundaries tracking graphical mapping limits connecting commits dynamically indicating structural operations.
-- [x] Formalize **Contextual Click Properties** mapping explicit full-metadata rendering structures dynamically activating adjacent DOM nodes matching requested WebGL hash logic seamlessly generating precise commit analytics continuously.
-- [x] Setup visual **Label Priorities** enforcing `Tag > Short_Hash` rendering logic dynamically.
+- [x] **RBAC policies** — `Admin`, `Team Owner`, `Team Member` roles carried
+  in JWT claims and enforced by `RequireAuth`/`RequireRole` middleware, with
+  the role hierarchy persisted in the PostgreSQL schema.
+- [x] **OAuth provider authentication** — GitHub OAuth2 authorization-code
+  flow with `crypto/rand` CSRF state validation and internal JWT issuance.
+- [x] **Team-to-repo 1:N structure** — foreign-key isolation between teams
+  and repositories in the schema; single-tenant guard on the topology
+  endpoint pending persisted team ownership checks.
+- [ ] **Dedicated secrets management layer** (Vault/KMS) — decouple tenant
+  cryptographic keys and credentials from the standard persistence layer.
+- [ ] **GitHub identity persistence** — map OAuth profiles onto `users`
+  rows and an org→team policy (currently the callback issues the
+  single-tenant default identity).
 
-## 3. Contextual Navigation & Search Matrix
-- [x] Build abstract **Indexed Data Lookup** integrating Go routines scanning active loaded nodes matching custom values mapped instantly resolving structural layouts directly isolating valid datasets dynamically mapping attributes natively.
-- [ ] Deploy **Inverted-Index Search Datastore** (Elasticsearch/Meilisearch) scaling full-text query resolution bounds across unified canvases instantly.
-- [x] Write logic defining **Selective Visibility** bounds strictly enforcing architectural requirements guaranteeing `Origin/Split` coordinates rendering correctly despite filtering adjacent paths shielding logic continuously isolating historical context dependencies mapping requirements natively.
-- [x] Engineer **Multi-Repo Canvas Synchronization** mapping separate repository graphs matching coordinated layouts mapping combined arrays tracking merged timelines simultaneously visually correlating operations securely mapping cross-project dependencies synchronously tracking overlapping timelines explicitly parsing constraints seamlessly.
+## 2. Visualization Engine
 
-## 4. Collaborative State Synchronization Constraints
-- [ ] Implement **Event-Driven Git Synchronization** via Webhook bindings mapping active push events dynamically rather than relying on synchronous bare clone polling continuously.
-- [ ] Deploy **Server-Side Graph Aggregation** clustering legacy/linear commits dynamically via semantic zoom matrices mitigating extreme client-side DAG payload transmissions reliably.
-- [ ] Build **Semantic AST Dependency Parser Worker** auto-generating visual cross-repo links matching repository manifests (`package.json`, `go.mod`) securely minimizing manual structural mapping loads explicitly.
-- [x] Transition WebGL canvas mapping enabling exact **Manual Dependency Line Drawing** natively generating internal annotation payloads mapping node-to-node configurations dynamically storing vectors mapped inherently updating Yjs instances explicitly.
-- [x] Embed distinct **Cursor WebSocket Tracking** resolving X/Y DOM parameters dynamically routing payload mapping boundaries directly scaling multi-user visual identifiers securely parsing awareness frames inherently mapped exclusively rendering concurrent UI markers inherently tracking operational constraints efficiently simulating identical spatial locations directly avoiding latency gaps dynamically processing network ticks securely coordinating updates tracking map data dynamically synchronizing arrays successfully processing connections seamlessly mapping constraints natively.
+- [x] **Chronological left-to-right layout** — Unix-epoch-scaled `x_offset`
+  assignment without overlap.
+- [x] **Y-axis lane sorting** — oldest-origin lane assignment with primary
+  parent lane takeover.
+- [x] **Bezier connectors** — cubic curves for lane-crossing splits and
+  merges, straight segments within a lane.
+- [x] **Contextual click properties** — full-metadata floating panel for the
+  selected node.
+- [x] **Label priorities** — `tag > short_hash` rendering logic.
+- [x] **Infinite viewport** — pointer-anchored zoom and drag panning.
+- [ ] **Viewport culling** — restrict draw calls to nodes inside the
+  visible window for very large graphs.
+
+## 3. Navigation & Search
+
+- [x] **Indexed data lookup** — instant client-side filtering over loaded
+  nodes by hash, author, and message.
+- [x] **Selective visibility retention** — split (origin) and merge commits
+  are always retained under filtering, preserving structural context.
+- [x] **Multi-repo canvas synchronization** — unified chronological layout
+  across repositories with `<RepoID>_<SHA>` collision-free node ids.
+- [ ] **Inverted-index search datastore** (Elasticsearch/Meilisearch) for
+  cross-repository full-text queries at scale.
+- [ ] **Selective branch visibility toggles** — "tagged commits only" and
+  per-branch hiding built on the retention algorithm.
+
+## 4. Collaborative State Synchronization
+
+- [x] **Cursor tracking** — Yjs awareness broadcasting of world-space
+  pointer positions with per-room isolation.
+- [x] **Manual dependency line drawing** — drawing mode persists
+  `AnnotationVector`s into a shared `Y.Array`, rendered for all room
+  participants.
+- [ ] **Server-side Yjs document persistence** — snapshot CRDT documents to
+  PostgreSQL so annotations survive when all clients disconnect.
+- [ ] **Event-driven git synchronization** — webhook ingress replacing
+  fetch-on-request refresh.
+- [ ] **Server-side graph aggregation** — semantic-zoom clustering of legacy
+  linear commit runs to bound client payloads.
+- [ ] **Semantic AST dependency parser worker** — auto-generate cross-repo
+  visual links from manifests (`package.json`, `go.mod`).

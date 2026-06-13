@@ -1,25 +1,52 @@
 # Collaborative Git Visualization Platform
 
-## Project Purpose & Description Software
-The Collaborative Git Visualization Platform is an elite, cloud-native application designed to radically transform how development teams interact with Git repository histories. By abstracting the standard CLI log into an interactive, real-time collaborative WebGL canvas, it resolves the difficulty of mapping massive branch topologies, evaluating structural splits/merges, and managing historical commit knowledge. 
+A self-hosted, cloud-native application that transforms Git repository
+histories into an interactive, real-time collaborative WebGL canvas. Instead
+of reading linear CLI logs, teams explore branch topologies on an infinite,
+Miro-style workspace: commits are laid out chronologically across branch
+lanes, splits and merges are drawn as Bezier connectors, and collaborators
+share live cursors and hand-drawn dependency annotations synchronized through
+conflict-free CRDTs.
 
-The software strictly targets self-hosted customer environments enforcing zero-trust data sovereignty dynamically mapping `HTTPS` and `SSH` credentials to localized bare bare-repositories. The software provides an infinite, Miro-style collaborative workspace where architects can annotate, visually link cross-dependencies, and traverse chronological topologies effortlessly across thousands of data points asynchronously synchronized via zero-conflict `CRDT` WebSockets.
+The platform targets zero-trust, self-hosted environments: repositories are
+mirrored into local bare clones, credentials are encrypted at rest
+(AES-256-GCM), and all components run as rootless containers.
 
-## Documentation Navigation
+## Key Capabilities
 
-This monorepo adheres strictly to enterprise operational workflow parameters.
+| Capability | Description |
+| :--- | :--- |
+| Topology canvas | Chronological left-to-right commit layout with branch lanes and Bezier split/merge connectors, rendered in WebGL (PixiJS) |
+| Infinite viewport | Pointer-anchored wheel zoom and drag panning over arbitrarily large graphs |
+| Multi-repo view | Multiple repositories unified onto one canvas with collision-free `<RepoID>_<SHA>` node identifiers |
+| Real-time collaboration | Yjs CRDT synchronization over WebSockets: live cursors and persistent drawn annotation vectors |
+| Search & filtering | Instant client-side filtering by hash, author, or message that always retains split and merge nodes for structural context |
+| Authentication | JWT sessions with RBAC claims; GitHub OAuth2 flow with CSRF protection |
+| Persistence | PostgreSQL schema for users, teams, repositories, and annotations with 1:N team-to-repository isolation |
 
-*   [Overall Architecture](./docs/architecture.md)
-*   [Technology Stack Matrix](./docs/tech_stack.md)
-*   [Developer Local Setup Guide](./docs/local-setup.md)
-*   [Features Matrix](./docs/features_doc.md)
-*   [API Schema Definitions](./docs/apis_doc.md)
-*   [Internal Function Parameters](./docs/functions_doc.md)
-*   [Feature Development TODO Map](./docs/todo_features.md)
+## Documentation
 
-## Monorepo Layout Bounds
+| Document | Audience | Content |
+| :--- | :--- | :--- |
+| [Architecture](./docs/architecture.md) | Engineers | System design, collaboration pipeline, rendering model |
+| [Technology Stack](./docs/tech_stack.md) | Engineers | Language and framework choices with rationale |
+| [Local Setup](./docs/local-setup.md) | Engineers | Step-by-step local development environment |
+| [Features](./docs/features_doc.md) | All | Functional specification of the platform |
+| [API Reference](./docs/apis_doc.md) | Engineers | REST and WebSocket endpoint contracts |
+| [Function Reference](./docs/functions_doc.md) | Engineers | Per-package function documentation |
+| [Roadmap](./docs/todo_features.md) | All | Implemented and planned feature checklist |
+| [Cloud Administrator Manual](./docs/manuals/cloud-admin-guide.md) | Operators | Hosting, deployment, secrets, backups, troubleshooting |
+| [Access Administration Manual](./docs/manuals/access-admin-guide.md) | Administrators | Roles, users, teams, and repository access provisioning |
+| [User Manual](./docs/manuals/user-guide.md) | Team owners & members | Using the collaborative canvas |
 
-*   `apps/frontend`: WebGL rendering layer leveraging React and PixiJS.
-*   `apps/backend`: Bare-git daemon wrapper and WebSocket Yjs relay written in Golang.
-*   `infra/`: Infrastructure deployments encompassing Podman contexts and PostgreSQL bindings.
-*   `docs/`: Extensive internal blueprinting, step-by-step configurations, and architectural guides.
+## Monorepo Layout
+
+| Path | Purpose |
+| :--- | :--- |
+| `apps/frontend/` | React + PixiJS WebGL canvas application (TypeScript, Vite) |
+| `apps/backend/` | Go API server: bare-git engine, REST API, Yjs WebSocket relay |
+| `packages/shared-types/` | Cross-app TypeScript data contracts mirroring the Go wire format |
+| `packages/utils/` | Shared pure helpers (hash codec, viewport math) |
+| `infra/` | Podman/Docker Compose, Kubernetes manifests (Kustomize), Terraform scaffolding |
+| `cicd/` | Build/test and deployment pipeline definitions |
+| `docs/` | Architecture, guides, API reference, and manuals |

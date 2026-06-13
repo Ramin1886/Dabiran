@@ -1,34 +1,68 @@
-# Software Features Documentation
+# Feature Specification
 
-This documentation catalogs the functional specifications the platform exposes matching the explicit application requirements rigorously.
+Functional specification of the platform. Items marked *(roadmap)* are
+planned and tracked in [todo_features.md](./todo_features.md); everything
+else is implemented.
 
-## 1. Multi-Tenancy & Authorization Logic
+## 1. Multi-Tenancy & Authorization
 
-The system isolates operations dynamically enforcing secure `Role-Based Access Control` limits preventing arbitrary metadata leaks across internal corporate instances.
-*   **Admins:** Execute team allocation limits mapping users contextually.
-*   **Team Owners:** Provision secure authentication contexts mapping external endpoints natively via injected `OAuth Providers` or localized `SSH` configurations isolating Port-22 environments cleanly.
-*   **Team Members:** Granted native read-only access observing filter layouts applying custom collaborative visual metadata mappings directly parsing active datasets.
+Role-based access control isolates tenants and prevents metadata leaks
+across teams.
 
-## 2. Navigation, Filtering & Multi-Repo Architecture
+| Role | Capabilities |
+| :--- | :--- |
+| Admin | Provisions teams and assigns users |
+| Team Owner | Registers repositories and authentication credentials for the team |
+| Team Member | Read access to team repositories; creates collaborative annotations |
 
-To limit complex topology constraints, the engine dynamically restricts rendered layouts minimizing cognitive bottlenecks explicitly.
+* Sessions are JWTs (HS256) carrying `user_id`, `team_id`, and `role`
+  claims; middleware enforces authentication on protected routes and role
+  checks where required.
+* The database schema enforces team-to-repository 1:N isolation through
+  foreign keys.
+* GitHub OAuth2 sign-in is implemented with CSRF state validation. Identity
+  mapping from GitHub profiles onto persisted users/teams is *(roadmap)*;
+  until then the backend issues a single-tenant default identity.
+* Repository credentials are encrypted with AES-256-GCM before storage. A
+  dedicated secrets layer (Vault/KMS) for master keys is *(roadmap)*.
 
-*   **Inverted-Index Search Infrastructure:** Integrates a dedicated search engine (e.g., Elasticsearch, Meilisearch) to guarantee sub-millisecond retrieval for complex, cross-repository textual queries across millions of commits, rather than relying on standard database dynamic lookups.
-*   **Selective Visibility Matrices:** 
-    *   Renders specific toggles triggering `"Tagged Commits Only"`.
-    *   Dynamically handles `"Selective Branch Visibility"` minimizing pipeline tracks exclusively isolating branches to map active logic efficiently.
-    *   **Contextual Branch Rule:** Enforces algorithms guaranteeing an isolated rendered branch permanently traces connections matching explicit `split` (origin) and `merge` bounds retaining critical mapping constraints logically.
+## 2. Navigation, Filtering & Multi-Repo Canvas
 
-### Custom Multi-Repo Tab (Unified Canvas)
-The engine overrides standard layout configurations generating single unified mapping plains explicitly targeting isolated dependencies visualizing links dynamically tracking separated repositories simultaneously.
-
-### Automated Dependency Resolution
-A Semantic AST / Dependency Parser Worker automatically parses cross-repo manifests (`go.mod`, `package.json`, Git Submodules) or issue tracking references in commit messages. It auto-generates contextual visual links across the canvas, reducing the need for manual dependency mapping.
+* **Commit search** — the HUD search field filters the rendered graph
+  instantly by hash, author, or message (case-insensitive, client-side).
+* **Structural retention rule** — filtering always retains split commits
+  (more than one child) and merge commits (more than one parent), so the
+  skeleton of the topology stays legible regardless of the filter.
+* **Label priority** — nodes are labeled with their tag when one exists,
+  otherwise with their short hash.
+* **Unified multi-repo canvas** — `GET /api/v1/topology?repo_ids=1,2,…`
+  merges several repositories onto a single chronological canvas; node ids
+  are prefixed `<RepoID>_<SHA>` to prevent collisions.
+* **Inverted-index search service** (Elasticsearch/Meilisearch) for
+  cross-repository full-text queries over millions of commits *(roadmap)*.
+* **Selective branch visibility toggles** ("tagged commits only",
+  per-branch hiding) *(roadmap — the retention algorithm they depend on is
+  implemented)*.
+* **Automated dependency resolution** — an AST/manifest parser worker that
+  auto-links related commits across repositories *(roadmap)*.
 
 ## 3. Real-Time Collaboration Canvas
 
-Executes complex visual mapping rules mirroring Miro functionality operating structurally upon the parsed Git layer natively.
+Miro-style collaboration layered on the parsed Git topology:
 
-*   **Live User Cursors:** Broadcasts localized pointer tracking matrices asynchronously representing team navigation flows reliably.
-*   **Interactive Graphics:** Accommodates arbitrary mapping rules parsing text metadata boxes, custom coordinate lines, and color-coded annotations executing natively onto the WebGL engine directly.
-*   **Manual Visual Linking:** Operators securely snap vectors matching isolated repository branches illustrating implicit non-code dependencies directly mapping distinct commits securely tracing structural logic explicitly tracking architectural states consistently.
+* **Infinite viewport** — pointer-anchored wheel zoom and drag panning.
+* **Live cursors** — every collaborator's pointer is broadcast through the
+  Yjs awareness protocol and rendered at world coordinates, so cursors stay
+  anchored to the graph under any zoom level.
+* **Manual dependency drawing** — in drawing mode, dragging creates a vector
+  between arbitrary canvas points (e.g. linking commits across
+  repositories). Completed vectors are appended to a shared CRDT array and
+  appear for all room participants; they persist for the lifetime of the
+  collaborative session.
+* **Commit inspection** — clicking a node opens a floating panel with the
+  full message, author, date, tag, and parent lineage hashes.
+* **Conflict-free state** — all shared state is CRDT-backed (Yjs); there are
+  no locks and concurrent edits converge deterministically.
+* **Event-driven repository sync** via webhooks *(roadmap — refresh
+  currently happens on fetch)*.
+* **Server-side graph aggregation** for very large DAGs *(roadmap)*.
