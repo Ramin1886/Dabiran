@@ -1,4 +1,4 @@
-import type { AuthResponse, CommitNode } from '@git-viz/shared-types';
+import type { AuthResponse, CommitNode, DependencyLink } from '@git-viz/shared-types';
 
 /**
  * A single match from the server-backed deep search endpoint
@@ -68,6 +68,39 @@ export async function fetchTopology(
     throw new Error(`Topology fetch failed with status ${response.status}`);
   }
   return (await response.json()) as CommitNode[];
+}
+
+/**
+ * Fetches the auto-generated cross-repository dependency links for a set of
+ * repositories.
+ *
+ * Calls `GET {API_BASE}/api/v1/dependency-links?repo_ids=<id,id,...>` with an
+ * `Authorization: Bearer <token>` header and returns the `links` array from the
+ * `{ "links": [...] }` response envelope per the shared contract. These links
+ * are produced by the backend worker (Go/npm dependency analysis) and are
+ * rendered on the canvas distinctly from user-drawn annotation vectors.
+ *
+ * @param repoIds - repository identifiers to resolve dependency links for
+ * @param token - JWT access token obtained from {@link login}
+ * @returns the dependency links (empty array when the envelope omits `links`)
+ * @throws Error when the response status is not OK (message includes the HTTP
+ *   status so the HUD can surface it without blanking the canvas)
+ */
+export async function fetchDependencyLinks(
+  repoIds: string[],
+  token: string,
+): Promise<DependencyLink[]> {
+  // Encode ids individually so the comma separators stay literal in the URL.
+  const query = repoIds.map(encodeURIComponent).join(',');
+  const response = await fetch(
+    `${API_BASE}/api/v1/dependency-links?repo_ids=${query}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!response.ok) {
+    throw new Error(`Dependency links fetch failed with status ${response.status}`);
+  }
+  const body = (await response.json()) as { links: DependencyLink[] };
+  return body.links ?? [];
 }
 
 /**

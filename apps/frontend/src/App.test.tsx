@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { CommitNode } from '@git-viz/shared-types';
 import App from './App';
-import { login, fetchTopology, searchCommits } from './api/client';
+import { login, fetchTopology, fetchDependencyLinks, searchCommits } from './api/client';
 import { useStore } from './store/useStore';
 import { useCRDT } from './store/useCRDT';
 
@@ -11,6 +11,7 @@ vi.mock('y-websocket');
 vi.mock('./api/client', () => ({
   login: vi.fn(),
   fetchTopology: vi.fn(),
+  fetchDependencyLinks: vi.fn(),
   searchCommits: vi.fn(),
 }));
 
@@ -39,6 +40,7 @@ describe('App', () => {
   beforeEach(() => {
     vi.mocked(login).mockReset().mockResolvedValue({ access_token: 'tok', role: 'Team Member' });
     vi.mocked(fetchTopology).mockReset().mockResolvedValue([makeNode()]);
+    vi.mocked(fetchDependencyLinks).mockReset().mockResolvedValue([]);
     vi.mocked(searchCommits).mockReset().mockResolvedValue([]);
     useStore.setState({
       nodes: [],
@@ -48,6 +50,7 @@ describe('App', () => {
       selectedNode: null,
       drawingState: false,
       token: null,
+      dependencyLinks: [],
     });
   });
 
@@ -88,6 +91,33 @@ describe('App', () => {
 
     expect(useStore.getState().searchQuery).toBe('alpha');
     expect(input.value).toBe('alpha');
+  });
+
+  it('fetches dependency links for the loaded repo ids and stores them after topology load', async () => {
+    vi.mocked(fetchDependencyLinks).mockResolvedValueOnce([
+      { from_repo: '1', to_repo: '2', via: 'github.com/acme/shared', kind: 'go' },
+    ]);
+    render(<App />);
+    await screen.findByText('Loaded 1 commits');
+
+    // Resolved from the repo_id of the loaded topology nodes ('1').
+    expect(fetchDependencyLinks).toHaveBeenCalledWith(['1'], 'tok');
+    expect(useStore.getState().dependencyLinks).toHaveLength(1);
+    expect(useStore.getState().dependencyLinks[0].via).toBe('github.com/acme/shared');
+  });
+
+  it('surfaces a dependency-link fetch failure on the HUD WITHOUT blanking the loaded graph', async () => {
+    vi.mocked(fetchDependencyLinks).mockRejectedValueOnce(
+      new Error('Dependency links fetch failed with status 502'),
+    );
+    render(<App />);
+
+    // Status notes the failure but the loaded topology is preserved.
+    expect(
+      await screen.findByText(/dependency links unavailable/i),
+    ).toBeTruthy();
+    expect(useStore.getState().nodes).toHaveLength(1);
+    expect(useStore.getState().dependencyLinks).toEqual([]);
   });
 
   it('lifts the auth token into the store after login', async () => {

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { repoMapRoom } from '@git-viz/shared-types';
 import { InteractiveCanvas } from './components/Canvas';
 import { CommitPanel } from './components/CommitPanel';
-import { login, fetchTopology, searchCommits } from './api/client';
+import { login, fetchTopology, fetchDependencyLinks, searchCommits } from './api/client';
 import { useStore } from './store/useStore';
 import { useCRDT } from './store/useCRDT';
 
@@ -98,6 +98,24 @@ export default function App() {
 
         useStore.getState().setNodes(nodes);
         setStatus(`Loaded ${nodes.length} commits`);
+
+        // Auto-generated cross-repo dependency links (backend worker). Resolve
+        // the repo ids actually present in the loaded topology so links match
+        // visible nodes; fall back to the requested ids when none are present.
+        const loadedRepoIds = Array.from(new Set(nodes.map((n) => n.repo_id)));
+        const linkRepoIds = loadedRepoIds.length ? loadedRepoIds : DEFAULT_REPO_IDS;
+        try {
+          const links = await fetchDependencyLinks(linkRepoIds, auth.access_token);
+          if (cancelled) return;
+          useStore.getState().setDependencyLinks(links);
+        } catch (linkErr) {
+          // A dependency-link fetch failure must NOT blank the graph: keep the
+          // loaded topology and only annotate the HUD status line.
+          if (cancelled) return;
+          const message =
+            linkErr instanceof Error ? linkErr.message : String(linkErr);
+          setStatus(`Loaded ${nodes.length} commits (dependency links unavailable: ${message})`);
+        }
       } catch (err) {
         if (!cancelled) {
           setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);

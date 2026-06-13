@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AuthResponse, CommitNode } from '@git-viz/shared-types';
-import { login, fetchTopology, searchCommits, API_BASE } from './client';
+import type { AuthResponse, CommitNode, DependencyLink } from '@git-viz/shared-types';
+import {
+  login,
+  fetchTopology,
+  fetchDependencyLinks,
+  searchCommits,
+  API_BASE,
+} from './client';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -60,6 +66,41 @@ describe('api client', () => {
     it('propagates network failures', async () => {
       fetchMock.mockRejectedValueOnce(new TypeError('network down'));
       await expect(fetchTopology(['1'], 't')).rejects.toThrow('network down');
+    });
+  });
+
+  describe('fetchDependencyLinks', () => {
+    it('GETs /api/v1/dependency-links with comma-separated repo_ids and a Bearer header, returning links', async () => {
+      const links: DependencyLink[] = [
+        { from_repo: '1', to_repo: '2', via: 'github.com/acme/shared', kind: 'go' },
+      ];
+      fetchMock.mockResolvedValueOnce(okResponse({ links }));
+
+      const result = await fetchDependencyLinks(['1', '2'], 'my-token');
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8080/api/v1/dependency-links?repo_ids=1,2',
+        { headers: { Authorization: 'Bearer my-token' } },
+      );
+      expect(result).toEqual(links);
+    });
+
+    it('returns an empty array when the response omits links', async () => {
+      fetchMock.mockResolvedValueOnce(okResponse({}));
+      const result = await fetchDependencyLinks(['1'], 't');
+      expect(result).toEqual([]);
+    });
+
+    it('propagates non-OK statuses as errors', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({}) });
+      await expect(fetchDependencyLinks(['1'], 't')).rejects.toThrow(
+        'Dependency links fetch failed with status 502',
+      );
+    });
+
+    it('propagates network failures', async () => {
+      fetchMock.mockRejectedValueOnce(new TypeError('offline'));
+      await expect(fetchDependencyLinks(['1'], 't')).rejects.toThrow('offline');
     });
   });
 

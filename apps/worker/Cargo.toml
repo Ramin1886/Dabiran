@@ -1,0 +1,24 @@
+[package]
+name = "git-dep-worker"
+version = "0.1.0"
+edition = "2021"
+description = "Semantic AST / dependency parser worker: parses cross-repo Go/npm manifests and auto-generates cross-repository dependency links."
+license = "MIT"
+
+[[bin]]
+name = "git-dep-worker"
+path = "src/main.rs"
+
+[lib]
+name = "git_dep_worker"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Light blocking HTTP client (no async runtime) for posting links to the API.
+# rustls is the default TLS backend so the build needs no system OpenSSL.
+ureq = { version = "2", features = ["json", "tls"] }
+
+[dev-dependencies]
+tempfile = "3"

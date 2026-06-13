@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CommitNode } from '@git-viz/shared-types';
+import type { CommitNode, DependencyLink } from '@git-viz/shared-types';
 import type { ViewportTransform } from '@git-viz/utils';
 
 /** Re-exported for convenience so canvas modules share one import site. */
@@ -18,6 +18,12 @@ interface AppState {
    * can read it without prop-drilling. Null until login completes.
    */
   token: string | null;
+  /**
+   * Auto-generated cross-repository dependency links from the backend worker
+   * (`GET /api/v1/dependency-links`). Rendered distinctly from user-drawn
+   * annotation vectors; empty until the boot effect resolves them.
+   */
+  dependencyLinks: DependencyLink[];
   setNodes: (nodes: CommitNode[]) => void;
   setSearchQuery: (query: string) => void;
   setServerHits: (hashes: string[]) => void;
@@ -25,6 +31,7 @@ interface AppState {
   setSelectedNode: (hash: string | null) => void;
   setDrawingState: (isActive: boolean) => void;
   setToken: (token: string | null) => void;
+  setDependencyLinks: (links: DependencyLink[]) => void;
 }
 
 /**
@@ -52,6 +59,7 @@ export const useStore = create<AppState>((set, get) => ({
   selectedNode: null,
   drawingState: false, // Flag activating map drawing pointers overriding defaults naturally.
   token: null,
+  dependencyLinks: [],
 
   /**
    * Replaces the full topology dataset (wire-format CommitNode[] from
@@ -136,4 +144,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   /** Stores the JWT access token after login for authenticated API calls. */
   setToken: (token) => set({ token }),
+
+  /**
+   * Stores the auto-generated cross-repository dependency links resolved from
+   * the backend worker so the canvas can render them distinctly.
+   */
+  setDependencyLinks: (dependencyLinks) => set({ dependencyLinks }),
 }));

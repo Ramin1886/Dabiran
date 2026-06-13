@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { CommitNode } from '@git-viz/shared-types';
+import type { CommitNode, DependencyLink } from '@git-viz/shared-types';
 import { useStore } from './useStore';
 
 /** Builds a wire-format CommitNode with sensible defaults for tests. */
@@ -37,6 +37,7 @@ describe('useStore', () => {
       selectedNode: null,
       drawingState: false,
       token: null,
+      dependencyLinks: [],
     });
   });
 
@@ -121,6 +122,17 @@ describe('useStore', () => {
     expect(useStore.getState().token).toBe('jwt-123');
     useStore.getState().setToken(null);
     expect(useStore.getState().token).toBeNull();
+  });
+
+  it('setDependencyLinks stores the auto-generated cross-repo links', () => {
+    expect(useStore.getState().dependencyLinks).toEqual([]);
+    const links: DependencyLink[] = [
+      { from_repo: '1', to_repo: '2', via: 'github.com/acme/shared', kind: 'go' },
+    ];
+    useStore.getState().setDependencyLinks(links);
+    expect(useStore.getState().dependencyLinks).toEqual(links);
+    useStore.getState().setDependencyLinks([]);
+    expect(useStore.getState().dependencyLinks).toEqual([]);
   });
 
   it('setViewportTransform persists the pan/zoom transform', () => {

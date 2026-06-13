@@ -51,6 +51,29 @@ export interface SearchHit {
   tag: string;
 }
 
+/**
+ * An auto-generated cross-repository dependency link produced by the backend
+ * worker (`GET /api/v1/dependency-links`). Field names are snake_case to
+ * mirror the JSON tags on the Go/Rust worker struct — this is the wire format
+ * contract shared with the backend agent.
+ *
+ * Unlike a user-drawn {@link AnnotationVector}, a dependency link references
+ * repositories (not raw world coordinates): the frontend resolves
+ * representative on-canvas nodes for `from_repo`/`to_repo` at render time and
+ * stores the link as a synthetic `'dependency'` annotation on the canvas
+ * (rendered distinctly — a dashed amber line — from collaborative vectors).
+ */
+export interface DependencyLink {
+  /** repo_id (string) of the depending repository (source endpoint). */
+  from_repo: string;
+  /** repo_id (string) of the depended-upon repository (target endpoint). */
+  to_repo: string;
+  /** The module/package path establishing the dependency (label text). */
+  via: string;
+  /** Ecosystem that declared the dependency. */
+  kind: 'go' | 'npm';
+}
+
 /** RBAC roles enforced by the backend JWT claims (see docs/features_doc.md §1). */
 export type Role = 'Admin' | 'Team Owner' | 'Team Member';
 

@@ -261,6 +261,16 @@ func (s *APIServer) AddRoutes(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("/api/v1/topology", RequireAuth(s.ServeTopology))
+	mux.HandleFunc("/api/v1/dependency-links", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			RequireAuth(s.IngestDependencyLinks)(w, r)
+		case http.MethodGet:
+			RequireAuth(s.ListDependencyLinks)(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/api/v1/search", RequireAuth(s.ServeSearch))
 	// GitHub signs webhook bodies (HMAC), so this endpoint is intentionally
 	// not behind RequireAuth.

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { repoMapRoom, type AuthResponse, type CommitNode, type SearchHit } from './index';
+import {
+  repoMapRoom,
+  type AuthResponse,
+  type CommitNode,
+  type DependencyLink,
+  type SearchHit,
+} from './index';
 
 describe('repoMapRoom', () => {
   it('builds the canonical room id from a numeric repo id', () => {
@@ -61,6 +67,28 @@ describe('wire contract shapes', () => {
       tag: '',
     };
     expect(hit.repo_id).toBe('1');
+  });
+
+  it('DependencyLink matches the worker JSON tags (snake_case)', () => {
+    // Compile-time contract check: this literal must satisfy DependencyLink
+    // exactly as the Go/Rust worker serializes it for /api/v1/dependency-links.
+    const link: DependencyLink = {
+      from_repo: '1',
+      to_repo: '2',
+      via: 'github.com/acme/shared',
+      kind: 'go',
+    };
+    expect(link.from_repo).toBe('1');
+    expect(link.to_repo).toBe('2');
+    expect(link.kind).toBe('go');
+
+    const npmLink: DependencyLink = {
+      from_repo: '3',
+      to_repo: '1',
+      via: '@acme/shared',
+      kind: 'npm',
+    };
+    expect(npmLink.kind).toBe('npm');
   });
 
   it('AuthResponse carries token and role', () => {

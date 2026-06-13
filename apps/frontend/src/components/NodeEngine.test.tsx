@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
-import type { CommitNode } from '@git-viz/shared-types';
-import { NodeEngine, nodeLabel, isAggregate, aggregateLabel } from './NodeEngine';
+import type { CommitNode, DependencyLink } from '@git-viz/shared-types';
+import {
+  NodeEngine,
+  nodeLabel,
+  isAggregate,
+  aggregateLabel,
+  representativeNode,
+  truncateVia,
+} from './NodeEngine';
 import { useStore } from '../store/useStore';
 
 vi.mock('@pixi/react');
@@ -37,6 +44,7 @@ describe('NodeEngine', () => {
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
+      dependencyLinks: [],
     });
   });
 
@@ -159,6 +167,72 @@ describe('NodeEngine', () => {
 
       // 2 node glyphs + 1 connector (child → aggregate parent).
       expect(screen.getAllByTestId('pixi-graphics')).toHaveLength(3);
+    });
+  });
+
+  describe('cross-repo dependency links', () => {
+    const repo1 = makeNode({ hash: '1_a', short_hash: 'r1aa', repo_id: '1', x_offset: 100, lane: 0 });
+    const repo1Newer = makeNode({ hash: '1_b', short_hash: 'r1bb', repo_id: '1', x_offset: 300, lane: 0, parents: ['1_a'] });
+    const repo2 = makeNode({ hash: '2_a', short_hash: 'r2aa', repo_id: '2', x_offset: 200, lane: 1 });
+
+    const link: DependencyLink = {
+      from_repo: '1',
+      to_repo: '2',
+      via: 'github.com/acme/shared',
+      kind: 'go',
+    };
+
+    it('representativeNode picks the latest (max x_offset) node of a repo, null when absent', () => {
+      expect(representativeNode([repo1, repo1Newer, repo2], '1')).toBe(repo1Newer);
+      expect(representativeNode([repo1, repo2], '2')).toBe(repo2);
+      expect(representativeNode([repo1, repo2], '9')).toBeNull();
+    });
+
+    it('truncateVia shortens long module paths with an ellipsis', () => {
+      expect(truncateVia('@acme/x')).toBe('@acme/x');
+      const long = 'github.com/acme/really-long-module-path/internal';
+      expect(truncateVia(long).length).toBeLessThanOrEqual(24);
+      expect(truncateVia(long).endsWith('…')).toBe(true);
+    });
+
+    it('renders a dashed line + via label when both repos have visible nodes', () => {
+      act(() => {
+        useStore.getState().setNodes([repo1, repo1Newer, repo2]);
+        useStore.getState().setDependencyLinks([link]);
+      });
+      render(<NodeEngine />);
+
+      // The via label is emitted as Pixi Text.
+      expect(screen.getByText('github.com/acme/shared')).toBeTruthy();
+      // A dependency-link Graphics is added on top of the 3 node/connector
+      // graphics (3 nodes + 2 commit connectors among repo nodes ... here:
+      // 3 node glyphs + 1 connector (1_b→1_a) + 1 dependency line = 5).
+      expect(screen.getAllByTestId('pixi-graphics')).toHaveLength(5);
+    });
+
+    it('skips a dependency link when the to_repo has no visible node', () => {
+      act(() => {
+        useStore.getState().setNodes([repo1, repo1Newer]); // no repo 2 node
+        useStore.getState().setDependencyLinks([link]);
+      });
+      render(<NodeEngine />);
+
+      // No via label, and no extra dependency Graphics: just 2 node glyphs +
+      // 1 connector (1_b→1_a).
+      expect(screen.queryByText('github.com/acme/shared')).toBeNull();
+      expect(screen.getAllByTestId('pixi-graphics')).toHaveLength(3);
+    });
+
+    it('skips a dependency link when the from_repo has no visible node', () => {
+      act(() => {
+        useStore.getState().setNodes([repo2]); // no repo 1 node
+        useStore.getState().setDependencyLinks([link]);
+      });
+      render(<NodeEngine />);
+
+      expect(screen.queryByText('github.com/acme/shared')).toBeNull();
+      // Only the single repo2 node glyph.
+      expect(screen.getAllByTestId('pixi-graphics')).toHaveLength(1);
     });
   });
 });

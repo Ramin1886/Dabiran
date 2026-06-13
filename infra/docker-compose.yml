@@ -109,6 +109,30 @@ services:
       - backend
     restart: unless-stopped
 
+  # Semantic AST / dependency parser worker (apps/worker, Rust). This is a
+  # ONE-SHOT, on-demand job, NOT an always-on service: the `tools` profile keeps
+  # it out of the default `up` set, and restart: "no" prevents any auto-restart.
+  #
+  # Mount a host directory that contains one subdirectory per repository
+  # (subdirectory NAME = repo id, e.g. 1/, 2/) at /scan, then invoke it:
+  #
+  #   # Print links only:
+  #   podman-compose run --rm \
+  #     -v /abs/path/to/repos:/scan:ro worker --root /scan
+  #
+  #   # Print AND POST to the backend (needs a JWT from /api/v1/auth/login):
+  #   podman-compose run --rm \
+  #     -v /abs/path/to/repos:/scan:ro worker \
+  #     --root /scan --api http://backend:8080 --token "$JWT"
+  #
+  # (Use the in-network service name http://backend:8080 when run via compose.)
+  worker:
+    build:
+      context: ../apps/worker
+      dockerfile: Dockerfile
+    profiles: ["tools"]
+    restart: "no"
+
 volumes:
   pgdata:
   repodata:

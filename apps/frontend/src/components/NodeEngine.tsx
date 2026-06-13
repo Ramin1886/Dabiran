@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Graphics, Text } from '@pixi/react';
 import * as PIXI from 'pixi.js';
-import type { CommitNode } from '@git-viz/shared-types';
+import type { CommitNode, DependencyLink } from '@git-viz/shared-types';
 import { screenToWorld } from '@git-viz/utils';
 import { useStore } from '../store/useStore';
 
@@ -12,6 +12,17 @@ const BASE_X_OFFSET = 50;
 /** Half-width/height of the aggregate cluster rounded-rect glyph. */
 const AGG_HALF_W = 28;
 const AGG_HALF_H = 18;
+/**
+ * Amber accent for auto-generated cross-repo dependency links — visually
+ * distinct from the cyan (#00E5FF) user-drawn annotation vectors and the grey
+ * (0x828282) commit connectors.
+ */
+const DEPENDENCY_HEX = 0xf59e0b;
+/** Dash/gap lengths (world units) for the emulated dashed dependency line. */
+const DASH_LENGTH = 10;
+const DASH_GAP = 6;
+/** Max characters of the `via` label before it is truncated with an ellipsis. */
+const VIA_LABEL_MAX = 24;
 
 /**
  * Frontend render view of a commit node widened with the two semantic-zoom
@@ -104,6 +115,65 @@ function segmentTouchesRect(
 }
 
 /**
+ * Resolves the deterministic representative node for a repository: the latest
+ * (maximum `x_offset`) node among `nodes` whose `repo_id` matches `repoId`
+ * (compared as strings). Returns null when no node belongs to that repo, so the
+ * caller can skip the dependency link.
+ *
+ * @param nodes - the candidate (visible) nodes to choose an endpoint from
+ * @param repoId - the dependency link repo identifier (string)
+ */
+export function representativeNode(
+  nodes: CommitNode[],
+  repoId: string,
+): CommitNode | null {
+  let best: CommitNode | null = null;
+  for (const node of nodes) {
+    if (String(node.repo_id) !== String(repoId)) continue;
+    if (best === null || (node.x_offset || 0) > (best.x_offset || 0)) {
+      best = node;
+    }
+  }
+  return best;
+}
+
+/**
+ * Truncates a dependency `via` label to {@link VIA_LABEL_MAX} characters,
+ * appending an ellipsis when shortened, so long module paths stay legible.
+ */
+export function truncateVia(via: string): string {
+  return via.length > VIA_LABEL_MAX ? `${via.slice(0, VIA_LABEL_MAX - 1)}…` : via;
+}
+
+/**
+ * Draws a dashed straight line from (ax,ay) to (bx,by) onto a PixiJS v7
+ * Graphics. PixiJS v7 has no native dash for Graphics, so the segment is split
+ * into alternating short dashes/gaps of {@link DASH_LENGTH}/{@link DASH_GAP}.
+ */
+function drawDashedLine(
+  g: PIXI.Graphics,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): void {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return;
+  const ux = dx / length;
+  const uy = dy / length;
+  const step = DASH_LENGTH + DASH_GAP;
+  let travelled = 0;
+  while (travelled < length) {
+    const dashEnd = Math.min(travelled + DASH_LENGTH, length);
+    g.moveTo(ax + ux * travelled, ay + uy * travelled);
+    g.lineTo(ax + ux * dashEnd, ay + uy * dashEnd);
+    travelled += step;
+  }
+}
+
+/**
  * Reads the current canvas pixel size. Mirrors the Stage sizing in Canvas.tsx
  * (full window). Guards against a missing window for non-DOM test envs.
  */
@@ -129,6 +199,7 @@ export const NodeEngine: React.FC = () => {
   const selectedNode = useStore((state) => state.selectedNode);
   const setSelectedNode = useStore((state) => state.setSelectedNode);
   const transform = useStore((state) => state.viewportTransform);
+  const dependencyLinks = useStore((state) => state.dependencyLinks);
 
   // Track the screen size so the visible rect recomputes on window resize.
   const [screenSize, setScreenSize] = useState(readScreenSize);
@@ -285,9 +356,69 @@ export const NodeEngine: React.FC = () => {
     });
   };
 
+  /**
+   * Renders the auto-generated cross-repository dependency links as distinct
+   * dashed amber lines connecting a representative node of `from_repo` to one
+   * of `to_repo`, labelled with the (truncated) `via` module path.
+   *
+   * Endpoints are chosen deterministically via {@link representativeNode} (the
+   * latest/max-x_offset visible node of each repo). A link is skipped when
+   * either repo has no visible node. Culled with the same viewport approach as
+   * commit connectors: a link is dropped when its segment never touches the
+   * visible rect.
+   */
+  const renderDependencyLinks = () => {
+    return dependencyLinks.map((link: DependencyLink, i) => {
+      const fromNode = representativeNode(visibleNodes, link.from_repo);
+      const toNode = representativeNode(visibleNodes, link.to_repo);
+      // Skip links whose source or target repo has no visible node.
+      if (!fromNode || !toNode) return null;
+
+      const startX = nodeX(fromNode);
+      const startY = nodeY(fromNode);
+      const endX = nodeX(toNode);
+      const endY = nodeY(toNode);
+
+      if (!segmentTouchesRect(startX, startY, endX, endY, visibleRect)) {
+        return null;
+      }
+
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2;
+      const key = `dep-${link.from_repo}-${link.to_repo}-${i}`;
+
+      const drawLink = (g: PIXI.Graphics) => {
+        g.clear();
+        g.lineStyle(2, DEPENDENCY_HEX, 0.9);
+        drawDashedLine(g, startX, startY, endX, endY);
+      };
+
+      return (
+        <React.Fragment key={key}>
+          <Graphics draw={drawLink} />
+          <Text
+            text={truncateVia(link.via)}
+            x={midX}
+            y={midY - 10}
+            anchor={[0.5, 1]}
+            style={
+              new PIXI.TextStyle({
+                fill: '#f59e0b',
+                fontSize: 11,
+                fontFamily: 'monospace',
+                fontWeight: '600',
+              })
+            }
+          />
+        </React.Fragment>
+      );
+    });
+  };
+
   return (
     <>
       {renderLines()}
+      {renderDependencyLinks()}
       {renderNodes()}
     </>
   );
