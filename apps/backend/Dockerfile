@@ -3,9 +3,8 @@ FROM docker.io/library/golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-# Copy go mod and sum files
-COPY go.mod ./
-# (If we had go.sum) COPY go.sum ./
+# Copy module manifests first so dependency download layers cache well
+COPY go.mod go.sum ./
 
 # Download all dependencies
 RUN go mod download
@@ -13,17 +12,17 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+# Build the application (the main package lives in ./src, not the module root)
+RUN CGO_ENABLED=0 GOOS=linux go build -o main ./src
 
 # Run Stage
-FROM docker.io/library/alpine:latest  
+FROM docker.io/library/alpine:latest
 
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
-# Copy the Pre-built binary file from the previous stage
+# Copy the pre-built binary from the previous stage
 COPY --from=builder /app/main .
 
 EXPOSE 8080

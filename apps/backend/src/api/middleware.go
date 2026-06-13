@@ -5,24 +5,30 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ramin1886/git-interactive-history/backend/auth"
+	"github.com/ramin1886/git-interactive-history/backend/src/auth"
 )
 
+// contextKey is a private type so context values set here cannot collide
+// with keys from other packages.
 type contextKey string
+
+// ClaimsContextKey locates the validated *auth.Claims in a request context.
 const ClaimsContextKey contextKey = "claims"
 
-// RequireAuth is a core HTTP middleware resolving Authorization header tokens explicitly enforcing system 1:N access bounds.
+// RequireAuth wraps next, rejecting requests without a valid "Bearer <jwt>"
+// Authorization header (401) and injecting the validated claims into the
+// request context under ClaimsContextKey.
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "authorization required natively", http.StatusUnauthorized)
+			http.Error(w, "authorization required", http.StatusUnauthorized)
 			return
 		}
 
 		parts := strings.Split(authHeader, "Bearer ")
 		if len(parts) != 2 {
-			http.Error(w, "invalid authorization schema formatting", http.StatusUnauthorized)
+			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
 			return
 		}
 
@@ -37,12 +43,13 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// RequireRole enforces specific RBAC roles securely bypassing context queries resolving authorization levels immediately.
+// RequireRole wraps next with RequireAuth and additionally rejects callers
+// whose JWT role claim differs from role (403).
 func RequireRole(role string, next http.HandlerFunc) http.HandlerFunc {
 	return RequireAuth(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := r.Context().Value(ClaimsContextKey).(*auth.Claims)
 		if !ok || claims.Role != role {
-			http.Error(w, "insufficient operational mapped roles", http.StatusForbidden)
+			http.Error(w, "insufficient role", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
