@@ -24,6 +24,38 @@ export const API_BASE: string =
   import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
 
 /**
+ * A repository registered for the caller's team, as returned by
+ * `GET /api/v1/repositories` (credentials are never included).
+ */
+export interface RepositorySummary {
+  id: number;
+  name: string;
+  url: string;
+}
+
+/**
+ * Lists the repositories registered for the caller's team.
+ *
+ * Calls `GET {API_BASE}/api/v1/repositories` with a bearer token and returns
+ * the summaries (no credentials). Used on boot to discover which repositories
+ * to load onto the canvas instead of relying on a hardcoded id.
+ *
+ * @param token - JWT access token obtained from {@link login}
+ * @returns the team's repository summaries (possibly empty)
+ * @throws Error when the response status is not OK
+ */
+export async function fetchRepositories(token: string): Promise<RepositorySummary[]> {
+  const response = await fetch(`${API_BASE}/api/v1/repositories`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`Fetch repositories failed with status ${response.status}`);
+  }
+  const data = (await response.json()) as RepositorySummary[] | null;
+  return data ?? [];
+}
+
+/**
  * Authenticates against the backend and returns the bearer token payload.
  *
  * Calls `GET {API_BASE}/api/v1/auth/login` (the backend's login endpoint,

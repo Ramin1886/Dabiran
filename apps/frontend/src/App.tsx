@@ -7,6 +7,7 @@ import {
   login,
   fetchTopology,
   fetchDependencyLinks,
+  fetchRepositories,
   searchCommits,
   fetchViews,
   saveView,
@@ -74,6 +75,13 @@ export default function App() {
   const recompactLayout = useStore((state) => state.recompactLayout);
   const toggleRecompact = useStore((state) => state.toggleRecompact);
   const didInit = useRef(false);
+  /**
+   * Repository ids currently loaded onto the canvas — discovered from the
+   * backend on boot (all of the team's registered repos), falling back to
+   * DEFAULT_REPO_IDS. Held in a ref so on-demand handlers (server search) use
+   * the live set without re-rendering.
+   */
+  const activeRepoIds = useRef<string[]>(DEFAULT_REPO_IDS);
 
   /** Sorted unique branch lanes present in the loaded topology. */
   const lanes = useMemo(() => laneList(nodes), [nodes]);
@@ -101,7 +109,7 @@ export default function App() {
 
     setStatus('Searching index…');
     try {
-      const hits = await searchCommits(query, DEFAULT_REPO_IDS, token);
+      const hits = await searchCommits(query, activeRepoIds.current, token);
       setServerHits(hits.map((h) => h.hash));
       setStatus(`Found ${hits.length} matches`);
     } catch (err) {
@@ -218,8 +226,20 @@ export default function App() {
         // graph or blocks the topology load below.
         void refreshViews(auth.access_token);
 
+        // Discover the team's registered repositories and load all of them,
+        // so the canvas shows whatever is registered rather than a fixed id.
+        // Falls back to DEFAULT_REPO_IDS when none are registered or the
+        // lookup fails.
+        try {
+          const repos = await fetchRepositories(auth.access_token);
+          if (cancelled) return;
+          if (repos.length) activeRepoIds.current = repos.map((r) => String(r.id));
+        } catch {
+          // Keep the default repo ids; topology load below still proceeds.
+        }
+
         setStatus('Loading topology…');
-        const nodes = await fetchTopology(DEFAULT_REPO_IDS, auth.access_token);
+        const nodes = await fetchTopology(activeRepoIds.current, auth.access_token);
         if (cancelled) return;
 
         useStore.getState().setNodes(nodes);
@@ -229,7 +249,7 @@ export default function App() {
         // the repo ids actually present in the loaded topology so links match
         // visible nodes; fall back to the requested ids when none are present.
         const loadedRepoIds = Array.from(new Set(nodes.map((n) => n.repo_id)));
-        const linkRepoIds = loadedRepoIds.length ? loadedRepoIds : DEFAULT_REPO_IDS;
+        const linkRepoIds = loadedRepoIds.length ? loadedRepoIds : activeRepoIds.current;
         try {
           const links = await fetchDependencyLinks(linkRepoIds, auth.access_token);
           if (cancelled) return;

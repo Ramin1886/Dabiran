@@ -6,6 +6,7 @@ import {
   login,
   fetchTopology,
   fetchDependencyLinks,
+  fetchRepositories,
   searchCommits,
   fetchViews,
   saveView,
@@ -20,6 +21,7 @@ vi.mock('./api/client', () => ({
   login: vi.fn(),
   fetchTopology: vi.fn(),
   fetchDependencyLinks: vi.fn(),
+  fetchRepositories: vi.fn(),
   searchCommits: vi.fn(),
   fetchViews: vi.fn(),
   saveView: vi.fn(),
@@ -52,6 +54,7 @@ describe('App', () => {
     vi.mocked(login).mockReset().mockResolvedValue({ access_token: 'tok', role: 'Team Member' });
     vi.mocked(fetchTopology).mockReset().mockResolvedValue([makeNode()]);
     vi.mocked(fetchDependencyLinks).mockReset().mockResolvedValue([]);
+    vi.mocked(fetchRepositories).mockReset().mockResolvedValue([]);
     vi.mocked(searchCommits).mockReset().mockResolvedValue([]);
     vi.mocked(fetchViews).mockReset().mockResolvedValue([]);
     vi.mocked(saveView).mockReset().mockResolvedValue({ id: 1, name: 'v', state: '{}' });
@@ -78,8 +81,22 @@ describe('App', () => {
 
     expect(await screen.findByText('Loaded 1 commits')).toBeTruthy();
     expect(login).toHaveBeenCalledTimes(1);
+    // No registered repos -> falls back to the default id.
     expect(fetchTopology).toHaveBeenCalledWith(['1'], 'tok');
     expect(useStore.getState().nodes).toHaveLength(1);
+  });
+
+  it('loads ALL registered repositories discovered from the backend', async () => {
+    vi.mocked(fetchRepositories).mockResolvedValueOnce([
+      { id: 1, name: 'frontend', url: 'a' },
+      { id: 2, name: 'backend', url: 'b' },
+      { id: 3, name: 'shared', url: 'c' },
+    ]);
+    render(<App />);
+    await screen.findByText('Loaded 1 commits');
+
+    expect(fetchRepositories).toHaveBeenCalledWith('tok');
+    expect(fetchTopology).toHaveBeenCalledWith(['1', '2', '3'], 'tok');
   });
 
   it('connects the CRDT room repo_map_1 on mount', async () => {

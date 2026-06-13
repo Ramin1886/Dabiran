@@ -9,6 +9,7 @@ import {
   login,
   fetchTopology,
   fetchDependencyLinks,
+  fetchRepositories,
   searchCommits,
   fetchViews,
   saveView,
@@ -211,6 +212,35 @@ describe('api client', () => {
     it('propagates non-OK statuses as errors', async () => {
       fetchMock.mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) });
       await expect(deleteView(1, 't')).rejects.toThrow('View delete failed with status 404');
+    });
+  });
+
+  describe('fetchRepositories', () => {
+    it('GETs /api/v1/repositories with a Bearer header and returns the summaries', async () => {
+      const repos = [
+        { id: 1, name: 'frontend', url: 'a' },
+        { id: 2, name: 'backend', url: 'b' },
+      ];
+      fetchMock.mockResolvedValueOnce(okResponse(repos));
+
+      const result = await fetchRepositories('my-token');
+
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/repositories', {
+        headers: { Authorization: 'Bearer my-token' },
+      });
+      expect(result).toEqual(repos);
+    });
+
+    it('returns an empty array when the body is null', async () => {
+      fetchMock.mockResolvedValueOnce(okResponse(null));
+      expect(await fetchRepositories('t')).toEqual([]);
+    });
+
+    it('propagates non-OK statuses as errors', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) });
+      await expect(fetchRepositories('t')).rejects.toThrow(
+        'Fetch repositories failed with status 401',
+      );
     });
   });
 });
