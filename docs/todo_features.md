@@ -11,13 +11,14 @@ implemented and covered by the test suites.
 - [x] **OAuth provider authentication** — GitHub OAuth2 authorization-code
   flow with `crypto/rand` CSRF state validation and internal JWT issuance.
 - [x] **Team-to-repo 1:N structure** — foreign-key isolation between teams
-  and repositories in the schema; single-tenant guard on the topology
-  endpoint pending persisted team ownership checks.
-- [ ] **Dedicated secrets management layer** (Vault/KMS) — decouple tenant
-  cryptographic keys and credentials from the standard persistence layer.
-- [ ] **GitHub identity persistence** — map OAuth profiles onto `users`
-  rows and an org→team policy (currently the callback issues the
-  single-tenant default identity).
+  and repositories; the topology endpoint enforces per-repo team ownership.
+- [x] **Dedicated secrets management layer** — the repository-credential
+  master key resolves from HashiCorp Vault (fail-closed) via
+  `src/secrets.ResolveMasterKey`, falling back to env/dev key only when Vault
+  is not configured.
+- [x] **GitHub identity persistence** — the OAuth callback fetches the real
+  GitHub profile and orgs, upserts a `users` row, maps the primary org to a
+  team, and records membership (org admins become Team Owner).
 
 ## 2. Visualization Engine
 
@@ -31,8 +32,8 @@ implemented and covered by the test suites.
   selected node.
 - [x] **Label priorities** — `tag > short_hash` rendering logic.
 - [x] **Infinite viewport** — pointer-anchored zoom and drag panning.
-- [ ] **Viewport culling** — restrict draw calls to nodes inside the
-  visible window for very large graphs.
+- [x] **Viewport culling** — `NodeEngine` renders only nodes and connectors
+  inside the padded visible world rectangle (resize-aware).
 
 ## 3. Navigation & Search
 
@@ -42,8 +43,9 @@ implemented and covered by the test suites.
   are always retained under filtering, preserving structural context.
 - [x] **Multi-repo canvas synchronization** — unified chronological layout
   across repositories with `<RepoID>_<SHA>` collision-free node ids.
-- [ ] **Inverted-index search datastore** (Elasticsearch/Meilisearch) for
-  cross-repository full-text queries at scale.
+- [x] **Inverted-index search datastore** — Meilisearch full-text search
+  (`src/search`, `GET /api/v1/search`), indexed on demand, degrading to 503
+  when the index is unreachable; the HUD runs an on-submit deep search.
 - [ ] **Selective branch visibility toggles** — "tagged commits only" and
   per-branch hiding built on the retention algorithm.
 
@@ -54,11 +56,21 @@ implemented and covered by the test suites.
 - [x] **Manual dependency line drawing** — drawing mode persists
   `AnnotationVector`s into a shared `Y.Array`, rendered for all room
   participants.
-- [ ] **Server-side Yjs document persistence** — snapshot CRDT documents to
-  PostgreSQL so annotations survive when all clients disconnect.
-- [ ] **Event-driven git synchronization** — webhook ingress replacing
-  fetch-on-request refresh.
-- [ ] **Server-side graph aggregation** — semantic-zoom clustering of legacy
-  linear commit runs to bound client payloads.
-- [ ] **Semantic AST dependency parser worker** — auto-generate cross-repo
-  visual links from manifests (`package.json`, `go.mod`).
+- [x] **Server-side Yjs document persistence** — the relay appends every
+  inbound update to a `yjs_updates` log and replays a room's history to a
+  lone joining client, so drawn annotations survive disconnects.
+- [x] **Event-driven git synchronization** — `POST /api/v1/webhooks/github`
+  verifies the HMAC signature and triggers an async repo fetch + reindex.
+- [x] **Server-side graph aggregation** — `?max_nodes=N` collapses maximal
+  linear commit runs into aggregate nodes (`kind`/`count`), re-running layout;
+  the frontend renders them as cluster glyphs.
+- [x] **Semantic AST dependency parser worker** — the Rust `git-dep-worker`
+  parses `go.mod`/`package.json` and generates cross-repo dependency links,
+  ingested via `POST /api/v1/dependency-links` and rendered as dashed
+  connectors on the canvas.
+
+## Remaining
+
+- [ ] **Selective branch visibility toggles** — UI toggles for "tagged
+  commits only" and per-branch hiding (the retention algorithm they build on
+  is implemented).

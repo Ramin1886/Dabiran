@@ -45,6 +45,7 @@ mirrored into local bare clones, credentials are encrypted at rest
 | :--- | :--- |
 | `apps/frontend/` | React + PixiJS WebGL canvas application (TypeScript, Vite) |
 | `apps/backend/` | Go API server: bare-git engine, REST API, Yjs WebSocket relay |
+| `apps/worker/` | Rust `git-dep-worker`: parses manifests, generates cross-repo dependency links |
 | `packages/shared-types/` | Cross-app TypeScript data contracts mirroring the Go wire format |
 | `packages/utils/` | Shared pure helpers (hash codec, viewport math) |
 | `infra/` | Podman/Docker Compose, Kubernetes manifests (Kustomize), Terraform scaffolding |

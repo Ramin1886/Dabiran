@@ -16,9 +16,10 @@ client/server boundary.
 | Persistence | PostgreSQL (pgx/v5) | Implemented |
 | Shared contracts | TypeScript workspace packages | Implemented |
 | Containers / orchestration | Podman (Compose), Kubernetes (Kustomize) | Implemented |
-| Graph aggregation / AST workers | Rust | Planned |
+| Full-text search | Meilisearch | Implemented |
+| AST dependency worker | Rust (`git-dep-worker`) | Implemented |
+| Secrets management | HashiCorp Vault | Implemented |
 | Canvas math engine | Rust → WebAssembly | Planned |
-| Secrets management | HashiCorp Vault (HCL) | Planned |
 
 ## 1. Backend — Go
 
@@ -44,14 +45,15 @@ surprise. React manages the DOM HUD; PixiJS owns the WebGL context.
 > components, which PixiJS v8 removed. The rationale is documented in
 > `apps/frontend/vite.config.ts`.
 
-## 3. Graph Workers — Rust (planned)
+## 3. Graph Workers — Rust
 
-Parsing dependency manifests (`go.mod`, `package.json`) across thousands of
-repositories and aggregating massive commit DAGs requires deterministic
-performance without garbage-collection pauses. Rust is the selected language
-for these workers; for client-side spline and culling math at scale, the plan
-is Rust compiled to WebAssembly feeding binary coordinate arrays directly to
-the WebGL buffer.
+Parsing dependency manifests (`go.mod`, `package.json`) across many
+repositories requires deterministic performance without garbage-collection
+pauses. The `git-dep-worker` crate (`apps/worker`) parses manifests and
+generates cross-repo dependency links, posting them to the backend. For
+client-side spline and culling math at scale, the plan is Rust compiled to
+WebAssembly feeding binary coordinate arrays directly to the WebGL buffer
+(still planned).
 
 ## 4. Infrastructure — Podman, Kubernetes, HCL
 

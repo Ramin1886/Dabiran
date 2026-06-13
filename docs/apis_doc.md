@@ -9,8 +9,12 @@ examples assume the default base URL `http://localhost:8080`.
 | `/api/v1/auth/login` | GET | none | Development login (single-tenant default identity) |
 | `/api/v1/auth/github/login` | GET | none | Start the GitHub OAuth2 flow |
 | `/api/v1/auth/github/callback` | GET | OAuth state | Complete the OAuth2 flow, issue a JWT |
-| `/api/v1/topology` | GET | Bearer JWT | Unified multi-repo commit topology |
-| `/ws/<room>` | WebSocket | none | Yjs CRDT relay room |
+| `/api/v1/topology` | GET | Bearer JWT | Unified multi-repo commit topology (supports `max_nodes` aggregation) |
+| `/api/v1/repositories` | POST/GET | Bearer JWT | Register (Team Owner) / list team repositories |
+| `/api/v1/search` | GET | Bearer JWT | Meilisearch full-text commit search |
+| `/api/v1/dependency-links` | POST/GET | Bearer JWT | Ingest / list cross-repo dependency links |
+| `/api/v1/webhooks/github` | POST | HMAC signature | GitHub push webhook (event-driven sync) |
+| `/ws/<room>` | WebSocket | none | Yjs CRDT relay room (server-side persisted) |
 
 ## Authentication
 
@@ -76,6 +80,7 @@ repositories as a single unified node array.
 | Repository resolution | Each id is resolved against the `repositories` table (clone/fetch by URL) first, then against local bare repos `repos/mock_<id>.git`, then `repos/repo_<id>.git` |
 | Hash prefixing | `hash` and every entry of `parents` are prefixed `<RepoID>_<SHA>` so multi-repo graphs never collide |
 | Layout | Nodes sorted by author date; `x_offset` is seconds-from-oldest × 0.05 px; `lane` is the branch track index |
+| Aggregation | Optional `max_nodes=<N>`: when the extracted count exceeds N, maximal runs of linear commits collapse into `kind:"aggregate"` nodes carrying `count`, and the layout re-runs |
 
 **Response `200` — `CommitNode[]`** (contract mirrored by
 `@git-viz/shared-types`)
@@ -106,6 +111,69 @@ repositories as a single unified node array.
 | `403 Forbidden` | Token's team is not authorized for the repositories |
 | `404 Not Found` | None of the requested ids resolved to a repository |
 
+## Repository Management
+
+### `POST /api/v1/repositories`
+
+Registers a repository for the caller's team. **Team Owner** role required.
+The `auth_secret` (PAT or SSH key) is encrypted with AES-256-GCM
+(`crypto.Encrypt`) using the master key resolved from Vault or env before
+storage and is **never** returned by any endpoint.
+
+**Body** `{"name", "url", "auth_type", "auth_secret"}` — `auth_type` is one of
+`"https"`, `"ssh"`, or `""` (anonymous).
+
+**Response `201`** `{"id", "name", "url"}` (no credential).
+
+### `GET /api/v1/repositories`
+
+Lists the caller team's repositories as `[{"id", "name", "url"}]`. Any
+authenticated user.
+
+## Search
+
+### `GET /api/v1/search`
+
+Meilisearch-backed full-text commit search across the team's repositories.
+
+| Aspect | Specification |
+| :--- | :--- |
+| Auth | Bearer JWT; same per-repo team authorization as topology |
+| Query params | `q` (text), `repo_ids` (comma-separated) |
+| Response `200` | `{"hits": [{"hash","short_hash","author","message","repo_id","tag"}]}` |
+| `503` | The search index is unreachable (clients fall back to client-side filtering) |
+
+Commits are indexed on demand after a successful topology extraction and on
+webhook push events.
+
+## Dependency Links
+
+### `POST /api/v1/dependency-links`
+
+Ingests auto-generated cross-repository dependency links (produced by the
+Rust `git-dep-worker`). Stored as `dependency`-type annotation rows. The
+`from_repo` of every link must belong to the caller's team (else `403`).
+
+**Body** `{"links": [{"from_repo","to_repo","via","kind"}]}` —
+`kind` is `"go"` or `"npm"`, `via` is the linking module/package.
+**Response `200`** `{"stored": <n>}`.
+
+### `GET /api/v1/dependency-links`
+
+Returns the stored links whose `from_repo` is in `repo_ids` (team-scoped) as
+`{"links": [...]}`.
+
+## Webhooks
+
+### `POST /api/v1/webhooks/github`
+
+GitHub push webhook for event-driven repository sync. The raw body is
+verified against `X-Hub-Signature-256` (HMAC-SHA256 over
+`GITHUB_WEBHOOK_SECRET`; `401` on mismatch — verification is skipped with a
+logged warning in dev when the secret is unset). On `push` events the matching
+repository is fetched asynchronously and re-indexed (`202`); other events
+return `204`. Authenticated by the signature, not a JWT.
+
 ## Real-Time Synchronization
 
 ### `GET /ws/<room>` (WebSocket upgrade)
@@ -126,9 +194,10 @@ new WebsocketProvider('ws://host:8080/ws', 'repo_map_1', ydoc)
 | Payloads | Yjs document updates (shared `annotations` array) and awareness frames (live cursors) |
 | Limits | 1 MiB read limit per frame; ping/pong liveness; slow consumers are disconnected rather than blocking the room |
 
-> The relay holds no server-side document state; peers answer each other's
-> Yjs sync steps. A client alone in a room therefore starts from an empty
-> document. Server-side snapshots are on the roadmap.
+> The relay persists every inbound update to an append-only `yjs_updates`
+> log and replays a room's history to a lone joining client, so drawn
+> annotations survive when all clients disconnect (no-op when no database is
+> attached). Peers still answer each other's live Yjs sync steps.
 
 ## Operations
 

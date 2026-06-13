@@ -1,112 +1,87 @@
 # PROGRESS
 
-Status report per phase for the team build-out of the Collaborative Git
-Visualization Platform. Verification gate at the end of each phase:
-`go build/vet/test ./...` (backend) and `npm run build -w frontend` +
-`npm test` (workspaces) — all green at time of writing.
+Build-out status for the Collaborative Git Visualization Platform. The
+initial scaffold did not compile or run; it is now a fully building,
+tested, and live-verified stack with the feature roadmap essentially
+cleared. Verification gates (all green):
 
-## Phase 0 — Understanding
+- Backend: `go build/vet/test ./...` — 10 packages, tested against live PostgreSQL.
+- Worker: `cargo build/test` — 15 tests.
+- Frontend + packages: `npm test` — 72 frontend + 7 shared-types + utils.
+- Infra: compose parses; `kustomize build` of base and production overlay.
 
-Read every file under `docs/`, `apps/`, `packages/`, `infra/`, `cicd/`.
-Finding: the repo was a documented skeleton that **did not compile or run on
-either side** — missing `ws` package, missing Go deps, import paths not
-matching the `src/` layout, a go-git tag-API compile error, a stub
-`main.tsx` with no Vite scaffold, a broken TS↔Go wire contract
-(`xOffset` vs `x_offset`), empty `packages/`, zero tests, and Dockerfiles
-building wrong paths.
+## Implemented
 
-## Phase 1 — Packages (completed)
+### Foundations
+- npm workspaces; `@git-viz/shared-types` (wire contracts mirroring the Go
+  JSON tags) and `@git-viz/utils` (hash codec, viewport math).
+- Backend compiles and runs; PostgreSQL optional at boot; idempotent schema
+  migration plus single-tenant identity seed so the dev login works against a
+  fresh database.
 
-- npm workspaces root (`package.json`), `.gitignore`.
-- `@git-viz/shared-types`: `CommitNode` (snake_case wire format matching the
-  Go JSON tags and `docs/apis_doc.md`), `Role`, `AuthResponse`,
-  `CursorState`, `AnnotationVector`, `repoMapRoom()`.
-- `@git-viz/utils`: `<RepoID>_<SHA>` prefixed-hash codec, `screenToWorld`,
-  pointer-anchored `zoomAt` viewport math.
-- 10 vitest tests.
+### Identity & access
+- RBAC JWT claims + `RequireAuth`/`RequireRole` middleware.
+- GitHub OAuth2 with CSRF state; the callback fetches the real profile/orgs,
+  upserts a user, maps the primary org to a team, and records membership
+  (org admins → Team Owner).
+- Repository management API: register repos with credentials encrypted at
+  rest; topology enforces per-repo team ownership.
 
-## Phase 2 — Backend (completed)
+### Visualization & search
+- Chronological layout, branch lanes, Bezier connectors, tag/short-hash
+  labels, commit inspection panel.
+- Infinite viewport with pointer-anchored zoom/pan and **viewport culling**.
+- **Server-side graph aggregation** (`?max_nodes`) collapsing linear runs
+  into cluster nodes, rendered as distinct glyphs.
+- **Meilisearch** full-text search (indexed on demand, graceful 503), with an
+  on-submit deep-search HUD affordance over the instant client-side filter.
 
-- New `src/ws`: room-scoped binary relay hub for y-websocket clients
-  (path-segment room + `?room_id=` fallback per docs; per-client write pump,
-  read limits, ping/pong). Documented limitation: dumb relay — peers answer
-  Yjs sync steps; no server-side doc persistence yet.
-- New `src/db`: `Connect` + idempotent `Migrate` (users, teams,
-  repositories, annotations; 1:N tenant FKs). DB optional at boot —
-  warns and continues per local-setup flow.
-- Registered documented OAuth routes `/api/v1/auth/github/{login,callback}`
-  with crypto/rand CSRF state cookie and `role` in the callback payload.
-- Fixed: module import paths (`<module>/src/...`), missing `jwt`/`oauth2`
-  deps, tag resolution (lightweight + annotated), `JWT_SECRET` from env,
-  topology repo lookup via DB row with filesystem fallback, Dockerfile
-  build path. Added `.env.example`.
-- 12 `_test.go` files, 40 tests (clean under `-race`).
+### Collaboration & automation
+- Yjs CRDT relay with live cursors and drawn annotation vectors.
+- **Server-side Yjs persistence**: append-only update log replayed to lone
+  joiners, so annotations survive disconnects.
+- **Webhook ingress** (`/api/v1/webhooks/github`) with HMAC verification
+  driving async fetch + reindex.
+- **Rust `git-dep-worker`**: parses `go.mod`/`package.json`, generates
+  cross-repo dependency links, ingested via `/api/v1/dependency-links` and
+  rendered as dashed connectors on the canvas.
 
-## Phase 3 — Frontend (completed)
+### Secrets & operations
+- **HashiCorp Vault** sources the repo-credential master key (fail-closed),
+  falling back to env/dev key only when Vault is not configured.
+- Compose: Postgres + Meilisearch + Vault (dev) + on-demand worker, with
+  healthchecks and fully-qualified images for rootless Podman.
+- **Real CD pipeline** (`cicd/deploy.yaml`): builds and pushes backend +
+  frontend images to GHCR on release/manual dispatch, then deploys via
+  Kustomize when a `KUBE_CONFIG` secret is present. `cicd/build.yaml` runs
+  the CI test/validation gate.
 
-- Full scaffold: `index.html`, `main.tsx` (createRoot), `vite.config.ts`
-  (port 3000), strict tsconfig. `pixi.js` pinned to ^7.4 with
-  `@pixi/react` ^7.1 because the component layer uses v7 APIs that v8
-  removed (rationale documented in `vite.config.ts`).
-- Wire contract adopted from `@git-viz/shared-types` (`x_offset`/`lane`
-  fix in `NodeEngine`).
-- Infinite canvas: pointer-anchored wheel zoom + drag pan; world-space
-  cursor broadcasts and drawing vectors.
-- Boot pipeline: login → `fetchTopology(['1'])` → CRDT room
-  `repo_map_1`; HUD status line, search input (split/merge retention
-  filter), drawing-mode toggle, label priority tag > short_hash.
-- CRDT fixes: correct y-websocket room (path segment), persisted
-  `AnnotationVector`s in a shared `Y.Array('annotations')`.
-- Root-context Dockerfile for workspace builds. 8 test files, 41 tests.
+## Skipped / deferred (and why)
 
-## Phase 4 — Infra & CI/CD (completed)
+- **Selective branch-visibility toggles** — UI work on top of the existing
+  retention algorithm; not yet built. The only open roadmap item.
+- **Rust → WASM canvas math engine** — a performance optimization; the
+  current TypeScript math is adequate at present scale.
+- **GitHub profile fetch in tests** — exercised via a fake `GitHubClient`;
+  the real network call is integration-only.
+- **`packages/ui-components`** — no shared cross-app DOM components exist yet;
+  an empty library would be speculative.
 
-- Compose: postgres healthcheck + healthy-ordering, backend secrets env
-  with dev fallbacks (`JWT_SECRET`, `GITHUB_*`, `OAUTH_REDIRECT_URL`),
-  bare-repo cache volume, frontend built from repo-root context.
-- k8s: `git-viz-secrets` Secret (dev placeholder; production must come
-  from Vault/KMS per `docs/architecture.md`), backend deployment wired to
-  it via `secretKeyRef`.
-- CI (`cicd/build.yaml`): Go vet/test/build, npm workspace test + frontend
-  build, compose + kustomize validation. Kustomize verified locally.
+## Operating notes
 
-## Phase 5 — QA (completed)
-
-- Independent re-runs of all gates: backend 40 tests, frontend 41 tests,
-  packages 10 tests — green.
-- End-to-end smoke: booted the compiled server against a real bare clone
-  (`repos/mock_1.git`); verified `/health`, JWT login, topology JSON
-  (15 nodes, all contract fields, chronological `x_offset`,
-  `<RepoID>_` prefixes), `401` without a token, and graceful start
-  without PostgreSQL.
-
-## Skipped (and why)
-
-- **Vault/KMS secrets layer, Elasticsearch/Meilisearch inverted index,
-  webhook-driven sync, server-side graph aggregation, Rust AST dependency
-  parser worker, Rust/WASM math engine** — explicitly open roadmap items in
-  `docs/todo_features.md` requiring external services/credentials; left
-  unchecked there. Env stubs exist where relevant (`.env.example`).
-- **GitHub profile fetch in the OAuth callback** — needs real client
-  credentials and user persistence + org→team mapping; documented TODO,
-  callback still issues the internal JWT per the docs schema.
-- **`packages/ui-components`** — no shared DOM components exist yet across
-  apps; creating an empty library would be speculative.
-- **Test files for YAML manifests** — validated by the CI
-  `validate_infra` job (compose config + kustomize build) instead of unit
-  tests, which don't apply to declarative manifests.
-- **`cicd/deploy.yaml`** — remains a stub: deployment requires registry and
-  cluster credentials that are intentionally not in the repo.
+- Local dev: `cd infra && podman-compose up -d postgres` (or add
+  `meilisearch`, `vault`). The backend degrades gracefully when any optional
+  service is down. Run the worker on demand:
+  `podman-compose run --rm worker --root /repos --api http://backend:8080 --token <jwt>`.
+- Secrets: set `JWT_SECRET`, `REPO_CRED_KEY` (or Vault), `GITHUB_*`, and
+  `GITHUB_WEBHOOK_SECRET` in production; templates in `apps/backend/.env.example`.
+- CD: publishing requires no setup (GHCR via the built-in token); deploying
+  requires the `KUBE_CONFIG` repository secret and replacing `OWNER` in the
+  production overlay.
 
 ## Next steps
 
-1. Persist Yjs documents server-side (snapshot to PostgreSQL per
-   `docs/architecture.md` "Async Snapshot") so annotations survive when all
-   clients disconnect.
-2. Real GitHub identity in the OAuth callback + user/team persistence to
-   replace the single-tenant default claims.
-3. Repository management API (register repo URL + encrypted credential via
-   `crypto.Encrypt`) so topology no longer depends on pre-seeded bare repos.
-4. Viewport culling in `NodeEngine` (render only nodes inside the visible
-   window) ahead of large-DAG payloads; then server-side aggregation.
-5. Webhook ingress for event-driven sync (roadmap §4.1).
+1. Selective branch-visibility toggles in the HUD.
+2. Periodic compaction of the `yjs_updates` log into snapshots.
+3. Schedule the dependency worker (cron/webhook) instead of manual runs.
+4. Rust → WASM math engine for very large graphs.
