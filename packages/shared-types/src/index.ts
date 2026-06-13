@@ -74,6 +74,24 @@ export interface DependencyLink {
   kind: 'go' | 'npm';
 }
 
+/**
+ * A named snapshot of the canvas view state, persisted per user via the
+ * `/api/v1/views` REST endpoints (apps/backend/src/api/views.go).
+ *
+ * `state` is an OPAQUE, frontend-owned JSON string — the serialized viewport
+ * (pan/zoom) plus the active filters. The backend never parses it beyond
+ * requiring it to be non-empty; the frontend serializes and deserializes its
+ * own shape, so the contract here is just the persistence envelope.
+ */
+export interface CanvasView {
+  /** Server-assigned numeric id (canvas_views.id). */
+  id: number;
+  /** Human-readable label the user gave the saved view. */
+  name: string;
+  /** Frontend-owned JSON string: serialized viewport + active filters. */
+  state: string;
+}
+
 /** RBAC roles enforced by the backend JWT claims (see docs/features_doc.md §1). */
 export type Role = 'Admin' | 'Team Owner' | 'Team Member';
 

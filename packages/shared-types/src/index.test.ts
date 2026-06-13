@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   repoMapRoom,
   type AuthResponse,
+  type CanvasView,
   type CommitNode,
   type DependencyLink,
   type SearchHit,
@@ -89,6 +90,20 @@ describe('wire contract shapes', () => {
       kind: 'npm',
     };
     expect(npmLink.kind).toBe('npm');
+  });
+
+  it('CanvasView matches the /api/v1/views JSON tags', () => {
+    // Compile-time contract check: this literal must satisfy CanvasView
+    // exactly as the Go backend serializes it. `state` is an opaque,
+    // frontend-owned JSON string (serialized viewport + filters).
+    const view: CanvasView = {
+      id: 7,
+      name: 'Release overview',
+      state: '{"viewport":{"x":0,"y":0,"zoom":1},"filters":{"author":"Alice"}}',
+    };
+    expect(view.id).toBe(7);
+    expect(view.name).toBe('Release overview');
+    expect(JSON.parse(view.state).viewport.zoom).toBe(1);
   });
 
   it('AuthResponse carries token and role', () => {

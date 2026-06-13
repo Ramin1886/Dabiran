@@ -271,6 +271,11 @@ func (s *APIServer) AddRoutes(mux *http.ServeMux) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+	// Saved canvas views (per-user). The collection (POST create / GET list)
+	// lives at /api/v1/views; the trailing-slash pattern owns DELETE /{id}.
+	// Both require a valid JWT.
+	mux.HandleFunc("/api/v1/views", RequireAuth(s.HandleViews))
+	mux.HandleFunc("/api/v1/views/", RequireAuth(s.DeleteView))
 	mux.HandleFunc("/api/v1/search", RequireAuth(s.ServeSearch))
 	// GitHub signs webhook bodies (HMAC), so this endpoint is intentionally
 	// not behind RequireAuth.

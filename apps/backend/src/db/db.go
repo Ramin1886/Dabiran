@@ -90,6 +90,18 @@ CREATE TABLE IF NOT EXISTS yjs_updates (
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_yjs_updates_room ON yjs_updates (room, id);
+
+-- Per-user named snapshots of the frontend canvas view state (viewport +
+-- active filters). state is an opaque, frontend-owned JSON string the backend
+-- never parses (apps/backend/src/api/views.go).
+CREATE TABLE IF NOT EXISTS canvas_views (
+	id         SERIAL PRIMARY KEY,
+	user_id    INTEGER NOT NULL REFERENCES users(id),
+	team_id    INTEGER NOT NULL REFERENCES teams(id),
+	name       TEXT NOT NULL,
+	state      TEXT NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `
 
 // Migrate applies the idempotent schema DDL on pool. Safe to call on every

@@ -53,3 +53,16 @@ type Annotation struct {
 	AuthorID     int
 	CreatedAt    time.Time
 }
+
+// CanvasView is a user's named snapshot of the frontend canvas view state.
+// State is an opaque, frontend-owned JSON string (serialized viewport + active
+// filters) the backend persists verbatim and never parses. Views are scoped to
+// the owning user (UserID) within a team (TeamID).
+type CanvasView struct {
+	ID        int
+	UserID    int
+	TeamID    int
+	Name      string
+	State     string
+	CreatedAt time.Time
+}
