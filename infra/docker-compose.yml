@@ -130,8 +130,12 @@ services:
     build:
       context: ../apps/worker
       dockerfile: Dockerfile
-    profiles: ["tools"]
-    restart: "no"
+    command: ["--root", "/scan", "--api", "http://backend:8080", "--token-url", "http://backend:8080/api/v1/auth/login", "--daemon", "--interval", "3600"]
+    volumes:
+      - repodata:/scan:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   pgdata:

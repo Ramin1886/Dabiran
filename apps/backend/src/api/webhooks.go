@@ -115,6 +115,18 @@ func (s *APIServer) HandleGitHubWebhook(w http.ResponseWriter, r *http.Request) 
 			log.Printf("webhook: fetch for repo %d failed: %v", repoID, err)
 			return
 		}
+
+		// Trigger the dependency worker to scan the fresh repository files.
+		go func() {
+			resp, err := http.Post("http://worker:8081/trigger", "application/json", nil)
+			if err != nil {
+				log.Printf("webhook: failed to trigger dependency worker: %v", err)
+			} else {
+				resp.Body.Close()
+				log.Println("webhook: successfully triggered dependency worker")
+			}
+		}()
+
 		if s.Search == nil {
 			return
 		}
