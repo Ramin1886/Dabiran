@@ -46,8 +46,9 @@ implemented and covered by the test suites.
 - [x] **Inverted-index search datastore** — Meilisearch full-text search
   (`src/search`, `GET /api/v1/search`), indexed on demand, degrading to 503
   when the index is unreachable; the HUD runs an on-submit deep search.
-- [ ] **Selective branch visibility toggles** — "tagged commits only" and
-  per-branch hiding built on the retention algorithm.
+- [x] **Selective branch visibility toggles** — a "tagged commits only"
+  filter and per-branch (lane) hiding in the HUD, composed with search and
+  the structural retention rule so splits/merges always stay visible.
 
 ## 4. Collaborative State Synchronization
 
@@ -71,6 +72,6 @@ implemented and covered by the test suites.
 
 ## Remaining
 
-- [ ] **Selective branch visibility toggles** — UI toggles for "tagged
-  commits only" and per-branch hiding (the retention algorithm they build on
-  is implemented).
+- [ ] **Rust → WebAssembly canvas math engine** — compile the spline/culling
+  math to WASM for very large graphs (a performance optimization; the current
+  TypeScript math is adequate at present scale).

@@ -9,6 +9,16 @@ interface AppState {
   nodes: CommitNode[];
   visibleNodes: CommitNode[];
   searchQuery: string;
+  /**
+   * Server-backed "deep" search result hashes, or null when no server search
+   * is active. Takes precedence over the client-side {@link searchQuery} text
+   * match while set; cleared the moment the user types again.
+   */
+  serverHits: string[] | null;
+  /** When true, only tagged commits pass the filter (plus retained structure). */
+  tagsOnly: boolean;
+  /** Branch lanes the user has hidden via the visibility toggles. */
+  hiddenLanes: number[];
   viewportTransform: ViewportTransform;
   selectedNode: string | null;
   drawingState: boolean;
@@ -32,6 +42,12 @@ interface AppState {
   setDrawingState: (isActive: boolean) => void;
   setToken: (token: string | null) => void;
   setDependencyLinks: (links: DependencyLink[]) => void;
+  /** Toggles the "tagged commits only" visibility filter. */
+  toggleTagsOnly: () => void;
+  /** Hides the lane if visible, or reveals it if hidden. */
+  toggleLane: (lane: number) => void;
+  /** Clears all hidden lanes (reveals every branch). */
+  showAllLanes: () => void;
 }
 
 /**
@@ -51,103 +67,169 @@ function buildChildMap(nodes: CommitNode[]): Map<string, number> {
   return childMap;
 }
 
-export const useStore = create<AppState>((set, get) => ({
-  nodes: [],
-  visibleNodes: [],
-  searchQuery: '',
-  viewportTransform: { x: 0, y: 0, scale: 1 },
-  selectedNode: null,
-  drawingState: false, // Flag activating map drawing pointers overriding defaults naturally.
-  token: null,
-  dependencyLinks: [],
+/** The composable visibility filters applied to the topology. */
+export interface FilterState {
+  searchQuery: string;
+  serverHits: string[] | null;
+  tagsOnly: boolean;
+  hiddenLanes: number[];
+}
 
-  /**
-   * Replaces the full topology dataset (wire-format CommitNode[] from
-   * `GET /api/v1/topology`) and re-applies the active search filter so a
-   * refetch never leaks stale visibility state.
-   */
-  setNodes: (nodes) => {
-    set({ nodes, visibleNodes: nodes });
-    const { searchQuery, setSearchQuery } = get();
-    if (searchQuery) setSearchQuery(searchQuery);
-  },
+/**
+ * Computes the visible node set from the full topology by composing every
+ * active filter (search text or server hits, tagged-only, and per-branch lane
+ * visibility) with the Contextual Branch Rule: structural split (multiple
+ * children) and merge (multiple parents) commits are ALWAYS retained, so an
+ * isolated or filtered branch keeps its origin and merge bounds visible and
+ * its connections remain traceable (docs/features_doc.md §2).
+ *
+ * When no filter is active the full set is returned unchanged.
+ *
+ * @param nodes - the full loaded topology
+ * @param f - the active filter state
+ * @returns the nodes that should be rendered
+ */
+export function applyFilters(nodes: CommitNode[], f: FilterState): CommitNode[] {
+  const anyActive =
+    !!f.searchQuery || f.serverHits !== null || f.tagsOnly || f.hiddenLanes.length > 0;
+  if (!anyActive) return nodes;
 
-  /**
-   * Selective Visibility filter: keeps nodes matching the query on
-   * hash/author/message, and always retains structural split (multiple
-   * children) and merge (multiple parents) commits so the filtered graph
-   * preserves its topological skeleton (docs/features_doc.md §2,
-   * "Contextual Branch Rule").
-   */
-  setSearchQuery: (query) => {
-    const { nodes } = get();
-    if (!query) {
-      set({ searchQuery: query, visibleNodes: nodes });
-      return;
-    }
+  const childMap = buildChildMap(nodes);
+  const hiddenLaneSet = new Set(f.hiddenLanes);
+  const hitSet = f.serverHits ? new Set(f.serverHits) : null;
+  const lowerQuery = f.searchQuery.toLowerCase();
 
-    // O(N) child-count map identifying split (branching) commits.
-    const childMap = buildChildMap(nodes);
+  return nodes.filter((n) => {
+    // Contextual Branch Rule: always retain structural splits and merges.
+    const isSplit = (childMap.get(n.hash) || 0) > 1;
+    const isMerge = n.parents.length > 1;
+    if (isSplit || isMerge) return true;
 
-    const lowerQuery = query.toLowerCase();
+    // Branch (lane) visibility.
+    if (hiddenLaneSet.has(n.lane)) return false;
 
-    const filtered = nodes.filter((n) => {
+    // Tagged-only filter.
+    if (f.tagsOnly && !n.tag) return false;
+
+    // Search dimension: a server-search result set takes precedence over the
+    // instant client-side text match.
+    if (hitSet) {
+      if (!hitSet.has(n.hash)) return false;
+    } else if (f.searchQuery) {
       const isMatch =
         n.hash.toLowerCase().includes(lowerQuery) ||
         n.author.toLowerCase().includes(lowerQuery) ||
         n.message.toLowerCase().includes(lowerQuery);
+      if (!isMatch) return false;
+    }
 
-      // Retain splits and merges so isolated branches keep their origin and
-      // merge bounds visible regardless of the textual match.
-      const isSplit = (childMap.get(n.hash) || 0) > 1;
-      const isMerge = n.parents.length > 1;
+    return true;
+  });
+}
 
-      return isMatch || isSplit || isMerge;
-    });
+/**
+ * Returns the sorted, de-duplicated list of branch lanes present in the
+ * topology — the set of toggleable branches for the visibility HUD.
+ *
+ * @param nodes - the full loaded topology
+ * @returns ascending unique lane indices
+ */
+export function laneList(nodes: CommitNode[]): number[] {
+  return Array.from(new Set(nodes.map((n) => n.lane))).sort((a, b) => a - b);
+}
 
-    set({ searchQuery: query, visibleNodes: filtered });
-  },
+export const useStore = create<AppState>((set, get) => {
+  /** Recomputes visibleNodes from the current topology and filter state. */
+  const recompute = () => {
+    const { nodes, searchQuery, serverHits, tagsOnly, hiddenLanes } = get();
+    set({ visibleNodes: applyFilters(nodes, { searchQuery, serverHits, tagsOnly, hiddenLanes }) });
+  };
 
-  /**
-   * Applies the result of a server-backed "deep" search across the full
-   * index. The provided hashes are the commits the backend matched; we set
-   * visibleNodes to the union of those hit nodes plus the structural
-   * split/merge skeleton nodes, mirroring the retention rule used by the
-   * client-side {@link setSearchQuery} filter so the filtered graph keeps its
-   * topological skeleton.
-   *
-   * @param hashes - commit hashes returned by `GET /api/v1/search`
-   */
-  setServerHits: (hashes) => {
-    const { nodes } = get();
-    const hitSet = new Set(hashes);
-    const childMap = buildChildMap(nodes);
+  return {
+    nodes: [],
+    visibleNodes: [],
+    searchQuery: '',
+    serverHits: null,
+    tagsOnly: false,
+    hiddenLanes: [],
+    viewportTransform: { x: 0, y: 0, scale: 1 },
+    selectedNode: null,
+    drawingState: false, // Flag activating map drawing pointers overriding defaults naturally.
+    token: null,
+    dependencyLinks: [],
 
-    const filtered = nodes.filter((n) => {
-      const isHit = hitSet.has(n.hash);
-      const isSplit = (childMap.get(n.hash) || 0) > 1;
-      const isMerge = n.parents.length > 1;
-      return isHit || isSplit || isMerge;
-    });
+    /**
+     * Replaces the full topology dataset (wire-format CommitNode[] from
+     * `GET /api/v1/topology`) and re-applies the active filters so a refetch
+     * never leaks stale visibility state.
+     */
+    setNodes: (nodes) => {
+      set({ nodes });
+      recompute();
+    },
 
-    set({ visibleNodes: filtered });
-  },
+    /**
+     * Instant client-side text filter on hash/author/message. Typing clears any
+     * active server-search result so the live client filter takes over again.
+     */
+    setSearchQuery: (query) => {
+      set({ searchQuery: query, serverHits: null });
+      recompute();
+    },
 
-  /** Persists the infinite-canvas pan/zoom transform applied by Canvas.tsx. */
-  setViewportTransform: (transform) => set({ viewportTransform: transform }),
+    /**
+     * Applies the result of a server-backed "deep" search across the full
+     * index. The provided hashes become the active search dimension (composed
+     * with the tagged-only and branch filters and the structural retention
+     * rule).
+     *
+     * @param hashes - commit hashes returned by `GET /api/v1/search`
+     */
+    setServerHits: (hashes) => {
+      set({ serverHits: hashes });
+      recompute();
+    },
 
-  /** Marks a commit hash as selected, opening the CommitPanel HUD window. */
-  setSelectedNode: (selectedNode) => set({ selectedNode }),
+    /** Persists the infinite-canvas pan/zoom transform applied by Canvas.tsx. */
+    setViewportTransform: (transform) => set({ viewportTransform: transform }),
 
-  /** Toggles annotation drawing mode (disables panning while active). */
-  setDrawingState: (drawingState) => set({ drawingState }),
+    /** Marks a commit hash as selected, opening the CommitPanel HUD window. */
+    setSelectedNode: (selectedNode) => set({ selectedNode }),
 
-  /** Stores the JWT access token after login for authenticated API calls. */
-  setToken: (token) => set({ token }),
+    /** Toggles annotation drawing mode (disables panning while active). */
+    setDrawingState: (drawingState) => set({ drawingState }),
 
-  /**
-   * Stores the auto-generated cross-repository dependency links resolved from
-   * the backend worker so the canvas can render them distinctly.
-   */
-  setDependencyLinks: (dependencyLinks) => set({ dependencyLinks }),
-}));
+    /** Stores the JWT access token after login for authenticated API calls. */
+    setToken: (token) => set({ token }),
+
+    /**
+     * Stores the auto-generated cross-repository dependency links resolved from
+     * the backend worker so the canvas can render them distinctly.
+     */
+    setDependencyLinks: (dependencyLinks) => set({ dependencyLinks }),
+
+    /** Toggles the "tagged commits only" filter and recomputes visibility. */
+    toggleTagsOnly: () => {
+      set({ tagsOnly: !get().tagsOnly });
+      recompute();
+    },
+
+    /** Toggles a single branch lane's visibility and recomputes. */
+    toggleLane: (lane) => {
+      const hidden = new Set(get().hiddenLanes);
+      if (hidden.has(lane)) {
+        hidden.delete(lane);
+      } else {
+        hidden.add(lane);
+      }
+      set({ hiddenLanes: Array.from(hidden).sort((a, b) => a - b) });
+      recompute();
+    },
+
+    /** Reveals every branch lane and recomputes. */
+    showAllLanes: () => {
+      set({ hiddenLanes: [] });
+      recompute();
+    },
+  };
+});

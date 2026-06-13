@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { repoMapRoom } from '@git-viz/shared-types';
 import { InteractiveCanvas } from './components/Canvas';
 import { CommitPanel } from './components/CommitPanel';
 import { login, fetchTopology, fetchDependencyLinks, searchCommits } from './api/client';
-import { useStore } from './store/useStore';
+import { useStore, laneList } from './store/useStore';
 import { useCRDT } from './store/useCRDT';
 
 /** Repository ids loaded onto the unified canvas on boot. */
@@ -26,16 +26,34 @@ const hudControlStyle: React.CSSProperties = {
 /**
  * Main App: boots the data pipeline (login → topology fetch → store), joins
  * the CRDT collaboration room, and renders the HUD (title, status line,
- * search filter, drawing-mode toggle) above the WebGL canvas.
+ * search filter, drawing-mode toggle, tagged-only filter, and per-branch
+ * visibility toggles) above the WebGL canvas.
  */
+/** Glassmorphism style for an active (toggled-on) HUD control. */
+const hudActiveStyle: React.CSSProperties = {
+  border: '1px solid rgba(0, 229, 255, 0.6)',
+  color: '#00E5FF',
+  background: 'rgba(0, 229, 255, 0.12)',
+};
+
 export default function App() {
   const [status, setStatus] = useState<string>('Authenticating…');
+  const [branchesOpen, setBranchesOpen] = useState(false);
   const searchQuery = useStore((state) => state.searchQuery);
   const setSearchQuery = useStore((state) => state.setSearchQuery);
   const setServerHits = useStore((state) => state.setServerHits);
   const drawingState = useStore((state) => state.drawingState);
   const setDrawingState = useStore((state) => state.setDrawingState);
+  const nodes = useStore((state) => state.nodes);
+  const tagsOnly = useStore((state) => state.tagsOnly);
+  const toggleTagsOnly = useStore((state) => state.toggleTagsOnly);
+  const hiddenLanes = useStore((state) => state.hiddenLanes);
+  const toggleLane = useStore((state) => state.toggleLane);
+  const showAllLanes = useStore((state) => state.showAllLanes);
   const didInit = useRef(false);
+
+  /** Sorted unique branch lanes present in the loaded topology. */
+  const lanes = useMemo(() => laneList(nodes), [nodes]);
 
   /**
    * On-submit "deep" server search across the full index. Calls
@@ -186,17 +204,120 @@ export default function App() {
               ...hudControlStyle,
               cursor: 'pointer',
               fontWeight: 600,
-              ...(drawingState
-                ? {
-                    border: '1px solid rgba(0, 229, 255, 0.6)',
-                    color: '#00E5FF',
-                    background: 'rgba(0, 229, 255, 0.12)',
-                  }
-                : {}),
+              ...(drawingState ? hudActiveStyle : {}),
             }}
           >
             {drawingState ? 'Drawing: ON' : 'Draw'}
           </button>
+
+          {/* Tagged-commits-only visibility filter. */}
+          <button
+            type="button"
+            onClick={() => toggleTagsOnly()}
+            aria-pressed={tagsOnly}
+            aria-label="Tagged commits only"
+            style={{
+              ...hudControlStyle,
+              cursor: 'pointer',
+              fontWeight: 600,
+              ...(tagsOnly ? hudActiveStyle : {}),
+            }}
+          >
+            Tags only
+          </button>
+
+          {/* Per-branch (lane) visibility toggles. Splits and merges stay
+              visible regardless, so isolated branches keep their bounds. */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setBranchesOpen((open) => !open)}
+              aria-expanded={branchesOpen}
+              aria-label="Branch visibility"
+              style={{
+                ...hudControlStyle,
+                cursor: 'pointer',
+                fontWeight: 600,
+                ...(hiddenLanes.length > 0 ? hudActiveStyle : {}),
+              }}
+            >
+              Branches{hiddenLanes.length > 0 ? ` (${hiddenLanes.length} hidden)` : ''} ▾
+            </button>
+
+            {branchesOpen && (
+              <div
+                role="menu"
+                aria-label="Branch list"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  minWidth: '180px',
+                  maxHeight: '320px',
+                  overflowY: 'auto',
+                  background: 'rgba(15, 23, 42, 0.92)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  padding: '10px',
+                  boxShadow: '0 20px 40px -12px rgba(0,0,0,0.6)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '6px',
+                    paddingBottom: '6px',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>
+                    {lanes.length} branches
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => showAllLanes()}
+                    style={{
+                      ...hudControlStyle,
+                      padding: '2px 8px',
+                      fontSize: '0.7rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Show all
+                  </button>
+                </div>
+                {lanes.map((lane) => {
+                  const hidden = hiddenLanes.includes(lane);
+                  return (
+                    <label
+                      key={lane}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '4px 2px',
+                        fontSize: '0.85rem',
+                        color: hidden ? '#64748b' : '#e2e8f0',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!hidden}
+                        onChange={() => toggleLane(lane)}
+                        aria-label={`Branch lane ${lane}`}
+                      />
+                      Branch {lane}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Load/error status line. */}

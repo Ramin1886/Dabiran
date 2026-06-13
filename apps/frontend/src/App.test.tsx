@@ -46,6 +46,9 @@ describe('App', () => {
       nodes: [],
       visibleNodes: [],
       searchQuery: '',
+      serverHits: null,
+      tagsOnly: false,
+      hiddenLanes: [],
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
@@ -175,5 +178,40 @@ describe('App', () => {
     fireEvent.click(button);
     expect(useStore.getState().drawingState).toBe(true);
     expect(screen.getByRole('button', { name: 'Drawing: ON' })).toBeTruthy();
+  });
+
+  it('toggles the tagged-commits-only filter via the HUD button', async () => {
+    render(<App />);
+    await screen.findByText('Loaded 1 commits');
+
+    const button = screen.getByRole('button', { name: 'Tagged commits only' });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(button);
+    expect(useStore.getState().tagsOnly).toBe(true);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('opens the branches popover and hides a lane via its checkbox', async () => {
+    // Two-lane topology so there are branches to toggle.
+    vi.mocked(fetchTopology).mockReset().mockResolvedValue([
+      makeNode({ hash: '1_a', lane: 0 }),
+      makeNode({ hash: '1_b', lane: 1, parents: ['1_a'] }),
+    ]);
+    render(<App />);
+    await screen.findByText('Loaded 2 commits');
+
+    // Popover starts closed.
+    expect(screen.queryByRole('menu', { name: 'Branch list' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Branch visibility' }));
+    expect(screen.getByRole('menu', { name: 'Branch list' })).toBeTruthy();
+
+    // Uncheck lane 1 to hide it.
+    const lane1 = screen.getByLabelText('Branch lane 1') as HTMLInputElement;
+    expect(lane1.checked).toBe(true);
+    fireEvent.click(lane1);
+
+    expect(useStore.getState().hiddenLanes).toEqual([1]);
+    expect(useStore.getState().visibleNodes.map((n) => n.hash)).not.toContain('1_b');
   });
 });

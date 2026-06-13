@@ -40,9 +40,10 @@ across teams.
   are prefixed `<RepoID>_<SHA>` to prevent collisions.
 * **Inverted-index search service** (Elasticsearch/Meilisearch) for
   cross-repository full-text queries over millions of commits *(roadmap)*.
-* **Selective branch visibility toggles** ("tagged commits only",
-  per-branch hiding) *(roadmap — the retention algorithm they depend on is
-  implemented)*.
+* **Selective visibility toggles** — a "tagged commits only" filter and
+  per-branch (lane) hiding in the HUD. Both compose with search and honor the
+  structural retention rule, so split and merge commits always stay visible
+  and an isolated branch keeps its origin/merge bounds.
 * **Automated dependency resolution** — an AST/manifest parser worker that
   auto-links related commits across repositories *(roadmap)*.
 

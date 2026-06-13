@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { CommitNode, DependencyLink } from '@git-viz/shared-types';
-import { useStore } from './useStore';
+import { useStore, applyFilters, laneList } from './useStore';
 
 /** Builds a wire-format CommitNode with sensible defaults for tests. */
 function makeNode(overrides: Partial<CommitNode> = {}): CommitNode {
@@ -33,6 +33,9 @@ describe('useStore', () => {
       nodes: [],
       visibleNodes: [],
       searchQuery: '',
+      serverHits: null,
+      tagsOnly: false,
+      hiddenLanes: [],
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
@@ -133,6 +136,102 @@ describe('useStore', () => {
     expect(useStore.getState().dependencyLinks).toEqual(links);
     useStore.getState().setDependencyLinks([]);
     expect(useStore.getState().dependencyLinks).toEqual([]);
+  });
+
+  describe('tagged-only visibility filter', () => {
+    const tagged = makeNode({ hash: '1_t', short_hash: 't', message: 'release', tag: 'v1.0.0', lane: 1 });
+
+    it('toggleTagsOnly keeps only tagged commits plus the split/merge skeleton', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD, tagged]);
+      useStore.getState().toggleTagsOnly();
+
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(useStore.getState().tagsOnly).toBe(true);
+      expect(visible).toContain('1_t'); // tagged
+      expect(visible).toContain('1_a'); // split retained
+      expect(visible).toContain('1_d'); // merge retained
+      expect(visible).not.toContain('1_b'); // untagged plain commit dropped
+      expect(visible).not.toContain('1_c');
+    });
+
+    it('toggling off restores the full topology', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD, tagged]);
+      useStore.getState().toggleTagsOnly();
+      useStore.getState().toggleTagsOnly();
+      expect(useStore.getState().tagsOnly).toBe(false);
+      expect(useStore.getState().visibleNodes).toHaveLength(5);
+    });
+  });
+
+  describe('per-branch (lane) visibility', () => {
+    it('toggleLane hides a lane but retains structural splits/merges', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      // Hide lane 1 (only nodeC, a plain commit).
+      useStore.getState().toggleLane(1);
+      expect(useStore.getState().hiddenLanes).toEqual([1]);
+
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(visible).not.toContain('1_c'); // hidden lane, non-structural
+      expect(visible).toContain('1_a'); // split retained
+      expect(visible).toContain('1_d'); // merge retained
+      expect(visible).toContain('1_b'); // lane 0 still visible
+    });
+
+    it('hiding a lane still retains that lane\'s split/merge bounds', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      // Hide lane 0 — A (split) and D (merge) live there but are structural.
+      useStore.getState().toggleLane(0);
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(visible).toContain('1_a');
+      expect(visible).toContain('1_d');
+      expect(visible).not.toContain('1_b'); // plain lane-0 commit dropped
+    });
+
+    it('toggleLane is reversible and showAllLanes clears all hidden lanes', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      useStore.getState().toggleLane(1);
+      useStore.getState().toggleLane(1); // toggle back on
+      expect(useStore.getState().hiddenLanes).toEqual([]);
+
+      useStore.getState().toggleLane(0);
+      useStore.getState().toggleLane(1);
+      expect(useStore.getState().hiddenLanes).toEqual([0, 1]);
+      useStore.getState().showAllLanes();
+      expect(useStore.getState().hiddenLanes).toEqual([]);
+      expect(useStore.getState().visibleNodes).toHaveLength(4);
+    });
+  });
+
+  describe('applyFilters composition (pure)', () => {
+    const tagged = makeNode({ hash: '1_t', short_hash: 't', message: 'alpha release', tag: 'v1.0.0', lane: 1 });
+
+    it('returns all nodes when no filter is active', () => {
+      const all = [nodeA, nodeB, nodeC, nodeD];
+      expect(applyFilters(all, { searchQuery: '', serverHits: null, tagsOnly: false, hiddenLanes: [] })).toBe(all);
+    });
+
+    it('composes tags-only AND search with structural retention', () => {
+      const all = [nodeA, nodeB, nodeC, nodeD, tagged];
+      const visible = applyFilters(all, {
+        searchQuery: 'alpha',
+        serverHits: null,
+        tagsOnly: true,
+        hiddenLanes: [],
+      }).map((n) => n.hash);
+      // tagged AND matches "alpha"
+      expect(visible).toContain('1_t');
+      // nodeB matches "alpha"? message is "feature alpha work" -> yes, but it is
+      // untagged so tags-only drops it.
+      expect(visible).not.toContain('1_b');
+      // structural retained regardless
+      expect(visible).toContain('1_a');
+      expect(visible).toContain('1_d');
+    });
+
+    it('laneList returns sorted unique lanes', () => {
+      expect(laneList([nodeA, nodeB, nodeC, nodeD])).toEqual([0, 1]);
+      expect(laneList([])).toEqual([]);
+    });
   });
 
   it('setViewportTransform persists the pan/zoom transform', () => {

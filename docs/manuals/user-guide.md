@@ -73,6 +73,21 @@ match, so the filtered graph keeps its shape and you can always trace where
 a matching commit came from and where it went. Clear the field to restore
 the full graph.
 
+### Visibility toggles
+
+Two HUD controls let you reduce clutter without losing structure:
+
+* **Tags only** — shows only tagged commits (releases, milestones). Useful
+  for a high-level view of a long history.
+* **Branches ▾** — opens a list of the branch lanes on the canvas, each with
+  a checkbox. Uncheck a branch to hide it; **Show all** reveals everything.
+  Hide every branch but one to isolate it.
+
+Both toggles obey the same rule as search: split and merge commits stay
+visible regardless, so a hidden or isolated branch always keeps its origin
+and merge points and its connections remain traceable. The toggles combine —
+e.g. "Tags only" plus a hidden branch — and stack with the search filter.
+
 ## 6. Collaborating
 
 ### Live cursors
@@ -127,5 +142,7 @@ you can visually correlate work across projects and draw links between them.
 | Scroll wheel | canvas | Zoom (pointer-anchored) |
 | Click node | canvas | Open commit panel |
 | Search field | top bar | Filter commits (splits/merges always retained) |
+| **Tags only** button | top bar | Show only tagged commits |
+| **Branches ▾** button | top bar | Hide/show individual branch lanes |
 | **Draw** button | top bar | Toggle annotation drawing mode |
 | Status line | top bar, right | Connection / loading state |
