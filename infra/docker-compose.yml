@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    # Fully-qualified so rootless Podman (no unqualified-search registries)
+    # resolves it without extra host configuration.
+    image: docker.io/library/postgres:15-alpine
     environment:
       POSTGRES_USER: git_viz
       POSTGRES_PASSWORD: secret_password
