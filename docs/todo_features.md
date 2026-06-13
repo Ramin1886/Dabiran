@@ -109,6 +109,25 @@ provider abstraction:
   provider-specific (e.g. GitLab `oauth2`, Bitbucket `x-token-auth`). SSH key
   auth already works for every provider.
 
+### Role-based dashboards
+
+Dedicated landing dashboards per RBAC role (the roles already exist in the JWT
+claims and schema — `Admin`, `Team Owner`/group admin, `Team Member`), shown
+before/alongside the canvas:
+
+- [ ] **Admin dashboard** — provision and list teams, assign users to teams,
+  see platform-wide repository/team counts and recent activity. Backed by new
+  admin-scoped endpoints gated with `RequireRole("Admin")`.
+- [ ] **Team Owner (group admin) dashboard** — manage the team's repositories
+  (register/remove, rotate credentials), view team members, and configure the
+  provider/credentials, gated with `RequireRole("Team Owner")`.
+- [ ] **Team Member dashboard** — a personalized landing view: the team's
+  repositories, the member's saved canvas views, and quick links into the
+  topology, available to any authenticated user.
+
+These require role-aware routing in the frontend (render the dashboard for the
+caller's `role` claim) plus the supporting admin/team management REST endpoints.
+
 ### Other future directions
 
 - [ ] Streaming/virtualized topology loading for million-commit repositories.
