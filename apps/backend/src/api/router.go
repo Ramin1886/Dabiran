@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -16,7 +17,16 @@ import (
 	"github.com/ramin1886/git-interactive-history/backend/src/auth"
 	"github.com/ramin1886/git-interactive-history/backend/src/crypto"
 	"github.com/ramin1886/git-interactive-history/backend/src/gitengine"
+	"github.com/ramin1886/git-interactive-history/backend/src/search"
 )
+
+// Searcher is the subset of the Meilisearch client the API depends on. It is
+// an interface so handlers can be tested against a fake without a live Meili
+// (search.Client satisfies it).
+type Searcher interface {
+	IndexCommits(ctx context.Context, repoID string, nodes []gitengine.CommitNode) error
+	Search(ctx context.Context, q string, repoIDs []string) ([]search.SearchHit, error)
+}
 
 // APIServer binds the git engine and (optionally) the database pool to the
 // stateless HTTP handlers.
@@ -27,13 +37,28 @@ type APIServer struct {
 	DB *pgxpool.Pool
 	// OAuth serves the GitHub OAuth2 endpoints; it shares the same DB pool.
 	OAuth *auth.OAuthHandler
+	// Search indexes and queries commits via Meilisearch. It may be nil to
+	// disable full-text search (the /api/v1/search endpoint then returns 503
+	// and topology indexing is skipped).
+	Search Searcher
+	// RepoSyncer optionally overrides the git engine used by the webhook
+	// handler to fetch new commits. When nil the handler uses Engine; tests
+	// inject a stub so the handler is exercisable without network access.
+	RepoSyncer repoSyncer
 }
 
 // NewAPIServer constructs an APIServer over engine. pool may be nil to run
 // without database-backed repository metadata; the OAuth handler is wired to
-// the same pool so identity persistence and repository scoping agree.
+// the same pool so identity persistence and repository scoping agree. The
+// Meilisearch client is built from the environment (MEILI_URL/MEILI_MASTER_KEY)
+// and degrades gracefully when Meili is down.
 func NewAPIServer(engine *gitengine.GitEngine, pool *pgxpool.Pool) *APIServer {
-	return &APIServer{Engine: engine, DB: pool, OAuth: auth.NewOAuthHandler(pool)}
+	return &APIServer{
+		Engine: engine,
+		DB:     pool,
+		OAuth:  auth.NewOAuthHandler(pool),
+		Search: search.NewClient(),
+	}
 }
 
 // LoginMock issues a development JWT for the single-tenant default identity
@@ -184,6 +209,32 @@ func (s *APIServer) ServeTopology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort full-text indexing of the freshly extracted commits, one
+	// goroutine per repo. Index the un-aggregated nodes so search always
+	// covers real commits. Fire-and-forget: never blocks the response.
+	if s.Search != nil {
+		byRepo := make(map[string][]gitengine.CommitNode)
+		for _, n := range nodes {
+			byRepo[n.RepoID] = append(byRepo[n.RepoID], n)
+		}
+		for repoID, repoNodes := range byRepo {
+			go func(id string, ns []gitengine.CommitNode) {
+				if err := s.Search.IndexCommits(context.Background(), id, ns); err != nil {
+					log.Printf("topology: background index for repo %s failed: %v", id, err)
+				}
+			}(repoID, repoNodes)
+		}
+	}
+
+	// Optional aggregation: collapse maximal linear runs when max_nodes is set
+	// and the extracted count exceeds it. Absent/zero/over-budget leaves every
+	// node kind="commit", count=1 (no behaviour change).
+	if maxParam := r.URL.Query().Get("max_nodes"); maxParam != "" {
+		if maxNodes, perr := strconv.Atoi(maxParam); perr == nil && maxNodes > 0 {
+			nodes = gitengine.AggregateLinearRuns(nodes, maxNodes)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(nodes)
@@ -191,8 +242,9 @@ func (s *APIServer) ServeTopology(w http.ResponseWriter, r *http.Request) {
 
 // AddRoutes registers all REST endpoints on mux: mock login, the GitHub
 // OAuth2 pair documented in docs/apis_doc.md, repository management (create
-// is Team Owner only; list is any authenticated user), and the JWT-protected
-// topology extractor.
+// is Team Owner only; list is any authenticated user), the JWT-protected
+// topology extractor and full-text search, and the (HMAC-authenticated, no
+// JWT) GitHub webhook ingress.
 func (s *APIServer) AddRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/auth/login", s.LoginMock)
 	mux.HandleFunc("/api/v1/auth/github/login", s.OAuth.HandleLogin)
@@ -208,4 +260,8 @@ func (s *APIServer) AddRoutes(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("/api/v1/topology", RequireAuth(s.ServeTopology))
+	mux.HandleFunc("/api/v1/search", RequireAuth(s.ServeSearch))
+	// GitHub signs webhook bodies (HMAC), so this endpoint is intentionally
+	// not behind RequireAuth.
+	mux.HandleFunc("/api/v1/webhooks/github", s.HandleGitHubWebhook)
 }

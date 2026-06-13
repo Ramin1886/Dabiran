@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { repoMapRoom } from '@git-viz/shared-types';
 import { InteractiveCanvas } from './components/Canvas';
 import { CommitPanel } from './components/CommitPanel';
-import { login, fetchTopology } from './api/client';
+import { login, fetchTopology, searchCommits } from './api/client';
 import { useStore } from './store/useStore';
 import { useCRDT } from './store/useCRDT';
 
@@ -32,9 +32,44 @@ export default function App() {
   const [status, setStatus] = useState<string>('Authenticating…');
   const searchQuery = useStore((state) => state.searchQuery);
   const setSearchQuery = useStore((state) => state.setSearchQuery);
+  const setServerHits = useStore((state) => state.setServerHits);
   const drawingState = useStore((state) => state.drawingState);
   const setDrawingState = useStore((state) => state.setDrawingState);
   const didInit = useRef(false);
+
+  /**
+   * On-submit "deep" server search across the full index. Calls
+   * {@link searchCommits} for the loaded repo ids using the token lifted into
+   * the store, then drives the store filter with the returned hit hashes
+   * (union of hits + retained split/merge skeleton). Surfaces progress and
+   * errors on the HUD status line; if the endpoint 503s, falls back to the
+   * client-side filter (already applied on keystroke) and notes it.
+   *
+   * @param query - the submitted search text (empty submits are ignored)
+   */
+  const handleServerSearch = async (query: string): Promise<void> => {
+    if (!query.trim()) return;
+    const token = useStore.getState().token;
+    if (!token) {
+      setStatus('Search unavailable: not authenticated');
+      return;
+    }
+
+    setStatus('Searching index…');
+    try {
+      const hits = await searchCommits(query, DEFAULT_REPO_IDS, token);
+      setServerHits(hits.map((h) => h.hash));
+      setStatus(`Found ${hits.length} matches`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('503')) {
+        // Server unavailable — the client-side filter is already in effect.
+        setStatus('Server search unavailable — showing local results');
+      } else {
+        setStatus(`Error: ${message}`);
+      }
+    }
+  };
 
   /**
    * Boot effect: authenticate, fetch the commit topology for the default
@@ -52,6 +87,10 @@ export default function App() {
         setStatus('Authenticating…');
         const auth = await login();
         if (cancelled) return;
+
+        // Lift the token into the store so on-demand handlers (server search)
+        // can read it without prop-drilling through the boot effect.
+        useStore.getState().setToken(auth.access_token);
 
         setStatus('Loading topology…');
         const nodes = await fetchTopology(DEFAULT_REPO_IDS, auth.access_token);
@@ -104,14 +143,23 @@ export default function App() {
 
         {/* Interactive HUD controls re-enable pointer events explicitly. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', pointerEvents: 'auto' }}>
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search commits…"
-            aria-label="Search commits"
-            style={{ ...hudControlStyle, width: '240px' }}
-          />
+          {/* Instant client-side filter on keystroke; on submit (Enter) runs
+              the server-backed deep search across the full index. */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleServerSearch(searchQuery);
+            }}
+          >
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search commits…"
+              aria-label="Search commits"
+              style={{ ...hudControlStyle, width: '240px' }}
+            />
+          </form>
           <button
             type="button"
             onClick={() => setDrawingState(!drawingState)}

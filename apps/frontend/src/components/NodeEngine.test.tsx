@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import type { CommitNode } from '@git-viz/shared-types';
-import { NodeEngine, nodeLabel } from './NodeEngine';
+import { NodeEngine, nodeLabel, isAggregate, aggregateLabel } from './NodeEngine';
 import { useStore } from '../store/useStore';
 
 vi.mock('@pixi/react');
@@ -19,6 +19,8 @@ function makeNode(overrides: Partial<CommitNode> = {}): CommitNode {
     x_offset: 0,
     repo_id: '1',
     tag: '',
+    kind: 'commit',
+    count: 1,
     ...overrides,
   };
 }
@@ -71,5 +73,92 @@ describe('NodeEngine', () => {
 
     // 2 node circles + 1 connector (plain → tagged parent).
     expect(screen.getAllByTestId('pixi-graphics')).toHaveLength(3);
+  });
+
+  describe('viewport culling', () => {
+    // jsdom defaults the window to 1024x768; the visible world rect at the
+    // identity transform spans roughly x:[-80,1104], y:[-80,848] (1-row pad).
+    const onScreen = makeNode({ hash: '1_on', short_hash: 'onon', x_offset: 100, lane: 0 });
+    const offScreen = makeNode({
+      hash: '1_off',
+      short_hash: 'offf',
+      x_offset: 50_000, // way beyond the right edge of the visible rect
+      lane: 0,
+    });
+
+    it('renders on-screen nodes but culls off-screen ones', () => {
+      act(() => useStore.getState().setNodes([onScreen, offScreen]));
+      render(<NodeEngine />);
+
+      expect(screen.getByText('onon')).toBeTruthy();
+      expect(screen.queryByText('offf')).toBeNull();
+    });
+
+    it('still renders everything for a small fully-visible graph', () => {
+      act(() => useStore.getState().setNodes([tagged, plain]));
+      render(<NodeEngine />);
+
+      // Same 3 graphics as the un-culled baseline — culling is a no-op here.
+      expect(screen.getAllByTestId('pixi-graphics')).toHaveLength(3);
+    });
+
+    it('culls a connector when neither endpoint nor its span touch the rect', () => {
+      // Both nodes off-screen, far apart but both to the right — segment bbox
+      // never overlaps the visible rect, so the connector is culled too.
+      const farChild = makeNode({
+        hash: '1_fc',
+        short_hash: 'farc',
+        x_offset: 60_000,
+        lane: 0,
+        parents: ['1_off'],
+      });
+      act(() => useStore.getState().setNodes([offScreen, farChild]));
+      render(<NodeEngine />);
+
+      // Nothing rendered: both nodes and the connector are culled.
+      expect(screen.queryAllByTestId('pixi-graphics')).toHaveLength(0);
+    });
+  });
+
+  describe('semantic-zoom aggregate rendering', () => {
+    const agg = makeNode({
+      hash: '1_agg',
+      short_hash: 'aggg',
+      x_offset: 200,
+      lane: 0,
+      kind: 'aggregate',
+      count: 7,
+    });
+
+    it('isAggregate/aggregateLabel reflect the contract fields', () => {
+      expect(isAggregate(agg)).toBe(true);
+      expect(isAggregate(plain)).toBe(false);
+      expect(aggregateLabel(agg)).toBe('+7');
+    });
+
+    it('renders the aggregate cluster with a "+N" count label', () => {
+      act(() => useStore.getState().setNodes([agg]));
+      render(<NodeEngine />);
+
+      expect(screen.getByText('+7')).toBeTruthy();
+      // It is drawn as a glyph (one graphics) — its hash short label is not
+      // shown; the count label replaces it.
+      expect(screen.queryByText('aggg')).toBeNull();
+    });
+
+    it('still draws connectors to/from an aggregate node', () => {
+      const child = makeNode({
+        hash: '1_child',
+        short_hash: 'chld',
+        x_offset: 320,
+        lane: 1,
+        parents: ['1_agg'],
+      });
+      act(() => useStore.getState().setNodes([agg, child]));
+      render(<NodeEngine />);
+
+      // 2 node glyphs + 1 connector (child → aggregate parent).
+      expect(screen.getAllByTestId('pixi-graphics')).toHaveLength(3);
+    });
   });
 });

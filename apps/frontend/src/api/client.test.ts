@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AuthResponse, CommitNode } from '@git-viz/shared-types';
-import { login, fetchTopology, API_BASE } from './client';
+import { login, fetchTopology, searchCommits, API_BASE } from './client';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -60,6 +60,41 @@ describe('api client', () => {
     it('propagates network failures', async () => {
       fetchMock.mockRejectedValueOnce(new TypeError('network down'));
       await expect(fetchTopology(['1'], 't')).rejects.toThrow('network down');
+    });
+  });
+
+  describe('searchCommits', () => {
+    it('GETs /api/v1/search with encoded query + repo_ids and a Bearer header, returning hits', async () => {
+      const hits = [
+        { hash: '1_abc', short_hash: 'abc', author: 'Alice', message: 'fix bug', repo_id: 1, tag: '' },
+      ];
+      fetchMock.mockResolvedValueOnce(okResponse({ hits }));
+
+      const result = await searchCommits('fix bug', ['1', '2'], 'my-token');
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8080/api/v1/search?q=fix%20bug&repo_ids=1,2',
+        { headers: { Authorization: 'Bearer my-token' } },
+      );
+      expect(result).toEqual(hits);
+    });
+
+    it('returns an empty array when the response omits hits', async () => {
+      fetchMock.mockResolvedValueOnce(okResponse({}));
+      const result = await searchCommits('q', ['1'], 't');
+      expect(result).toEqual([]);
+    });
+
+    it('propagates non-OK statuses as errors (incl. 503 for fallback detection)', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) });
+      await expect(searchCommits('q', ['1'], 't')).rejects.toThrow(
+        'Search failed with status 503',
+      );
+    });
+
+    it('propagates network failures', async () => {
+      fetchMock.mockRejectedValueOnce(new TypeError('offline'));
+      await expect(searchCommits('q', ['1'], 't')).rejects.toThrow('offline');
     });
   });
 });

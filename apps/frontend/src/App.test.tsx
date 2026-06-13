@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { CommitNode } from '@git-viz/shared-types';
 import App from './App';
-import { login, fetchTopology } from './api/client';
+import { login, fetchTopology, searchCommits } from './api/client';
 import { useStore } from './store/useStore';
 import { useCRDT } from './store/useCRDT';
 
@@ -11,6 +11,7 @@ vi.mock('y-websocket');
 vi.mock('./api/client', () => ({
   login: vi.fn(),
   fetchTopology: vi.fn(),
+  searchCommits: vi.fn(),
 }));
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -28,14 +29,17 @@ function makeNode(overrides: Partial<CommitNode> = {}): CommitNode {
     x_offset: 0,
     repo_id: '1',
     tag: '',
+    kind: 'commit',
+    count: 1,
     ...overrides,
   };
 }
 
 describe('App', () => {
   beforeEach(() => {
-    vi.mocked(login).mockResolvedValue({ access_token: 'tok', role: 'Team Member' });
-    vi.mocked(fetchTopology).mockResolvedValue([makeNode()]);
+    vi.mocked(login).mockReset().mockResolvedValue({ access_token: 'tok', role: 'Team Member' });
+    vi.mocked(fetchTopology).mockReset().mockResolvedValue([makeNode()]);
+    vi.mocked(searchCommits).mockReset().mockResolvedValue([]);
     useStore.setState({
       nodes: [],
       visibleNodes: [],
@@ -43,6 +47,7 @@ describe('App', () => {
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
+      token: null,
     });
   });
 
@@ -83,6 +88,53 @@ describe('App', () => {
 
     expect(useStore.getState().searchQuery).toBe('alpha');
     expect(input.value).toBe('alpha');
+  });
+
+  it('lifts the auth token into the store after login', async () => {
+    render(<App />);
+    await screen.findByText('Loaded 1 commits');
+    expect(useStore.getState().token).toBe('tok');
+  });
+
+  it('submitting the search box runs the server-backed deep search and drives the store filter', async () => {
+    vi.mocked(searchCommits).mockResolvedValueOnce([
+      { hash: '1_aaaa', short_hash: 'aaaa', author: 'Alice', message: 'init', repo_id: 1, tag: '' },
+    ]);
+    render(<App />);
+    await screen.findByText('Loaded 1 commits');
+
+    const input = screen.getByLabelText('Search commits') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'init' } });
+    fireEvent.submit(input);
+
+    // searchCommits called for the default repo ids using the lifted token.
+    expect(searchCommits).toHaveBeenCalledWith('init', ['1'], 'tok');
+    expect(await screen.findByText('Found 1 matches')).toBeTruthy();
+    // The store filter reflects the hit (union with retained skeleton).
+    expect(useStore.getState().visibleNodes.map((n) => n.hash)).toContain('1_aaaa');
+  });
+
+  it('falls back to client-side filtering and notes it when the search endpoint 503s', async () => {
+    vi.mocked(searchCommits).mockRejectedValueOnce(new Error('Search failed with status 503'));
+    render(<App />);
+    await screen.findByText('Loaded 1 commits');
+
+    const input = screen.getByLabelText('Search commits') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'init' } });
+    fireEvent.submit(input);
+
+    expect(
+      await screen.findByText('Server search unavailable — showing local results'),
+    ).toBeTruthy();
+  });
+
+  it('ignores empty server-search submissions', async () => {
+    render(<App />);
+    await screen.findByText('Loaded 1 commits');
+
+    const input = screen.getByLabelText('Search commits') as HTMLInputElement;
+    fireEvent.submit(input);
+    expect(searchCommits).not.toHaveBeenCalled();
   });
 
   it('toggles drawing mode via the HUD button', async () => {

@@ -15,6 +15,8 @@ function makeNode(overrides: Partial<CommitNode> = {}): CommitNode {
     x_offset: 0,
     repo_id: '1',
     tag: '',
+    kind: 'commit',
+    count: 1,
     ...overrides,
   };
 }
@@ -34,6 +36,7 @@ describe('useStore', () => {
       viewportTransform: { x: 0, y: 0, scale: 1 },
       selectedNode: null,
       drawingState: false,
+      token: null,
     });
   });
 
@@ -79,6 +82,45 @@ describe('useStore', () => {
       expect(visible).not.toContain('1_c');
       expect(visible).toContain('1_b');
     });
+  });
+
+  describe('setServerHits (deep-search result with retention)', () => {
+    it('shows hit nodes plus retained split/merge skeleton nodes', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      // Server matched only nodeB; A (split) and D (merge) are retained.
+      useStore.getState().setServerHits(['1_b']);
+
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(visible).toContain('1_b'); // server hit
+      expect(visible).toContain('1_a'); // split retained
+      expect(visible).toContain('1_d'); // merge retained
+      expect(visible).not.toContain('1_c'); // plain non-hit dropped
+    });
+
+    it('retains only the skeleton when there are no hits', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      useStore.getState().setServerHits([]);
+
+      const visible = useStore.getState().visibleNodes.map((n) => n.hash);
+      expect(visible).toEqual(expect.arrayContaining(['1_a', '1_d']));
+      expect(visible).not.toContain('1_b');
+      expect(visible).not.toContain('1_c');
+    });
+
+    it('does not mutate the searchQuery field', () => {
+      useStore.getState().setNodes([nodeA, nodeB, nodeC, nodeD]);
+      useStore.getState().setSearchQuery('alpha');
+      useStore.getState().setServerHits(['1_c']);
+      expect(useStore.getState().searchQuery).toBe('alpha');
+    });
+  });
+
+  it('setToken stores and clears the JWT access token', () => {
+    expect(useStore.getState().token).toBeNull();
+    useStore.getState().setToken('jwt-123');
+    expect(useStore.getState().token).toBe('jwt-123');
+    useStore.getState().setToken(null);
+    expect(useStore.getState().token).toBeNull();
   });
 
   it('setViewportTransform persists the pan/zoom transform', () => {

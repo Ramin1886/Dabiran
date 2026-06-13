@@ -17,6 +17,8 @@ function makeNode(overrides: Partial<CommitNode> = {}): CommitNode {
     x_offset: 0,
     repo_id: '1',
     tag: '',
+    kind: 'commit',
+    count: 1,
     ...overrides,
   };
 }
@@ -67,5 +69,24 @@ describe('CommitPanel', () => {
     expect(screen.getByText('r00t')).toBeTruthy();
     expect(screen.queryByText('v2.0.0')).toBeNull();
     expect(screen.getByText(/Origin Trajectory/)).toBeTruthy();
+  });
+
+  it('summarizes the N collapsed commits for a selected aggregate node', () => {
+    const agg = makeNode({
+      hash: '1_agg',
+      short_hash: 'aggg',
+      kind: 'aggregate',
+      count: 9,
+    });
+    useStore.setState({ nodes: [agg], visibleNodes: [agg], selectedNode: '1_agg' });
+    render(<CommitPanel />);
+
+    // Aggregate variant of the panel, not the single-commit metadata view.
+    expect(screen.getByTestId('aggregate-panel')).toBeTruthy();
+    expect(screen.getByText('Collapsed Cluster')).toBeTruthy();
+    expect(screen.getByText('9 commits')).toBeTruthy();
+    expect(screen.getByText('AGGREGATE')).toBeTruthy();
+    // The normal-commit header is absent for aggregates.
+    expect(screen.queryByText('Node Target')).toBeNull();
   });
 });

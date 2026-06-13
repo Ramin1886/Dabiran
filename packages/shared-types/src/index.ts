@@ -27,6 +27,28 @@ export interface CommitNode {
   repo_id: string;
   /** Tag name when the commit is tagged; empty string otherwise. Label priority: Tag > short_hash. */
   tag: string;
+  /**
+   * Node kind: `'commit'` for a real commit (the default), or `'aggregate'`
+   * for a synthetic node collapsing a maximal run of linear commits when the
+   * topology request supplies `max_nodes` and the extracted count exceeds it.
+   */
+  kind: 'commit' | 'aggregate';
+  /** Underlying commit count: `1` for a real commit, the run length for an aggregate. */
+  count: number;
+}
+
+/**
+ * One full-text search hit returned by `GET /api/v1/search`. Field names are
+ * snake_case to mirror the Go `SearchHit` JSON tags (apps/backend/src/search).
+ */
+export interface SearchHit {
+  hash: string;
+  short_hash: string;
+  author: string;
+  message: string;
+  repo_id: string;
+  /** Tag name when the indexed commit is tagged; empty string otherwise. */
+  tag: string;
 }
 
 /** RBAC roles enforced by the backend JWT claims (see docs/features_doc.md §1). */

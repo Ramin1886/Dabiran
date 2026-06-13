@@ -106,9 +106,85 @@ func TestServeTopologyEndToEnd(t *testing.T) {
 		if !strings.HasPrefix(n.Hash, "1_") || n.RepoID != "1" {
 			t.Fatalf("node not prefixed for repo 1: %+v", n)
 		}
+		// New contract fields default to commit/1 when max_nodes is absent.
+		if n.Kind != "commit" || n.Count != 1 {
+			t.Fatalf("node should be commit/1 without max_nodes: %+v", n)
+		}
 	}
 	if nodes[0].XOffset != 0 || nodes[1].XOffset <= 0 {
 		t.Fatalf("x_offset layout missing: %v, %v", nodes[0].XOffset, nodes[1].XOffset)
+	}
+}
+
+// buildLinearFixture creates a bare repo with n linear commits at dest.
+func buildLinearFixture(t *testing.T, dest string, n int) {
+	t.Helper()
+	srcDir := t.TempDir()
+	repo, err := git.PlainInit(srcDir, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	base := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < n; i++ {
+		if err := os.WriteFile(filepath.Join(srcDir, "f.txt"), []byte(strings.Repeat("x", i+1)), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if _, err := wt.Add("f.txt"); err != nil {
+			t.Fatalf("add: %v", err)
+		}
+		sig := &object.Signature{Name: "Bob", Email: "bob@example.com", When: base.Add(time.Duration(i) * time.Minute)}
+		if _, err := wt.Commit("commit", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+			t.Fatalf("commit: %v", err)
+		}
+	}
+	bare, err := git.PlainClone(dest, true, &git.CloneOptions{URL: srcDir})
+	if err != nil {
+		t.Fatalf("bare clone: %v", err)
+	}
+	err = bare.Fetch(&git.FetchOptions{RefSpecs: []config.RefSpec{"+refs/heads/*:refs/heads/*"}, Force: true})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		t.Fatalf("fetch: %v", err)
+	}
+}
+
+func TestServeTopologyMaxNodesCollapsesLinearRuns(t *testing.T) {
+	storage := t.TempDir()
+	buildLinearFixture(t, filepath.Join(storage, "mock_1.git"), 8)
+	apiServer := NewAPIServer(gitengine.NewGitEngine(storage), nil)
+	apiServer.Search = nil // skip background indexing in the test
+	mux := http.NewServeMux()
+	apiServer.AddRoutes(mux)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	token, _ := auth.GenerateToken(auth.DefaultUserID, auth.DefaultTeamID, "Team Owner")
+	resp := authedGet(t, ts.URL+"/api/v1/topology?repo_ids=1&max_nodes=3", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var nodes []gitengine.CommitNode
+	if err := json.NewDecoder(resp.Body).Decode(&nodes); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// 8 linear commits → boundaries stay, interior collapses to one aggregate.
+	if len(nodes) >= 8 {
+		t.Fatalf("expected collapse below 8 nodes, got %d", len(nodes))
+	}
+	var sawAggregate bool
+	for _, n := range nodes {
+		if n.Kind == "aggregate" {
+			sawAggregate = true
+			if n.Count <= 1 {
+				t.Fatalf("aggregate count must exceed 1: %+v", n)
+			}
+		}
+	}
+	if !sawAggregate {
+		t.Fatal("expected at least one aggregate node with max_nodes set")
 	}
 }
 
