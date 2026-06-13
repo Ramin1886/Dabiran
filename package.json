@@ -1,5 +1,5 @@
 {
-  "name": "git-interactive-history",
+  "name": "dabiran",
   "version": "1.0.0",
   "private": true,
   "description": "Collaborative Git Visualization Platform monorepo root binding npm workspaces across apps and shared packages.",
