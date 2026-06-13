@@ -34,6 +34,9 @@ implemented and covered by the test suites.
 - [x] **Infinite viewport** — pointer-anchored zoom and drag panning.
 - [x] **Viewport culling** — `NodeEngine` renders only nodes and connectors
   inside the padded visible world rectangle (resize-aware).
+- [x] **Rust → WebAssembly canvas math engine** — `@git-viz/wasm-math`
+  computes viewport culling and Bezier connector flattening over packed
+  Float32Array buffers, with an identical pure-TS fallback.
 
 ## 3. Navigation & Search
 
@@ -72,6 +75,6 @@ implemented and covered by the test suites.
 
 ## Remaining
 
-- [ ] **Rust → WebAssembly canvas math engine** — compile the spline/culling
-  math to WASM for very large graphs (a performance optimization; the current
-  TypeScript math is adequate at present scale).
+All specified roadmap features are implemented. Future enhancements (not in
+the original specification) could include selective per-author filtering,
+saved canvas views, and offloading the layout pass itself to the wasm engine.

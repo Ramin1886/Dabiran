@@ -48,6 +48,7 @@ mirrored into local bare clones, credentials are encrypted at rest
 | `apps/worker/` | Rust `git-dep-worker`: parses manifests, generates cross-repo dependency links |
 | `packages/shared-types/` | Cross-app TypeScript data contracts mirroring the Go wire format |
 | `packages/utils/` | Shared pure helpers (hash codec, viewport math) |
+| `packages/wasm-math/` | Rust→WebAssembly canvas math engine (viewport culling, Bezier flattening) |
 | `infra/` | Podman/Docker Compose, Kubernetes manifests (Kustomize), Terraform scaffolding |
 | `cicd/` | Build/test and deployment pipeline definitions |
 | `docs/` | Architecture, guides, API reference, and manuals |

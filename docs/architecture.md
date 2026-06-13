@@ -116,12 +116,16 @@ stays fixed); dragging pans. All pointer interactions — drawing vectors and
 cursor broadcasts — are converted to world coordinates first, so
 collaborators see them anchored to the graph rather than to their screens.
 
-### Planned scale mitigations (roadmap)
+### Scale mitigations
 
-* **Server-side graph aggregation** — clustering old linear runs of commits
-  into aggregate blocks by semantic zoom level to bound payload size.
-* **Viewport culling** — restricting draw calls to nodes inside the visible
-  window to keep GPU load independent of total graph size.
+* **Server-side graph aggregation** — `?max_nodes=N` clusters old linear runs
+  of commits into aggregate nodes to bound payload size.
+* **Viewport culling** — draw calls are restricted to nodes/connectors inside
+  the visible window, keeping GPU load independent of total graph size.
+* **WebAssembly math engine** — the per-frame culling and Bezier connector
+  flattening run in `@git-viz/wasm-math` (Rust → WASM) over packed
+  `Float32Array` buffers, with an identical TypeScript fallback when wasm is
+  unavailable.
 
 ## 4. Data Model
 

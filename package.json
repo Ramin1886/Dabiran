@@ -6,10 +6,12 @@
   "workspaces": [
     "apps/frontend",
     "packages/shared-types",
-    "packages/utils"
+    "packages/utils",
+    "packages/wasm-math"
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
+    "build:wasm": "npm run build:wasm -w @git-viz/wasm-math",
     "build": "npm run build --workspaces --if-present"
   }
 }

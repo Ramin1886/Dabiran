@@ -1,0 +1,17 @@
+{
+  "name": "git-viz-wasm-math",
+  "type": "module",
+  "description": "WebGL canvas math (viewport culling + Bezier spline flattening) compiled to WebAssembly for the Git visualization frontend.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "files": [
+    "git_viz_wasm_math_bg.wasm",
+    "git_viz_wasm_math.js",
+    "git_viz_wasm_math.d.ts"
+  ],
+  "main": "git_viz_wasm_math.js",
+  "types": "git_viz_wasm_math.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -19,7 +19,7 @@ client/server boundary.
 | Full-text search | Meilisearch | Implemented |
 | AST dependency worker | Rust (`git-dep-worker`) | Implemented |
 | Secrets management | HashiCorp Vault | Implemented |
-| Canvas math engine | Rust → WebAssembly | Planned |
+| Canvas math engine | Rust → WebAssembly (`@git-viz/wasm-math`) | Implemented |
 
 ## 1. Backend — Go
 
@@ -50,10 +50,15 @@ surprise. React manages the DOM HUD; PixiJS owns the WebGL context.
 Parsing dependency manifests (`go.mod`, `package.json`) across many
 repositories requires deterministic performance without garbage-collection
 pauses. The `git-dep-worker` crate (`apps/worker`) parses manifests and
-generates cross-repo dependency links, posting them to the backend. For
-client-side spline and culling math at scale, the plan is Rust compiled to
-WebAssembly feeding binary coordinate arrays directly to the WebGL buffer
-(still planned).
+generates cross-repo dependency links, posting them to the backend.
+
+Client-side spline and culling math is implemented in Rust compiled to
+WebAssembly (`packages/wasm-math`, the `@git-viz/wasm-math` package). It
+exposes viewport culling and Bezier flattening over packed `Float32Array`
+buffers, feeding coordinate arrays straight into the WebGL line buffer. The
+frontend loads it lazily and falls back to an identical pure-TypeScript
+implementation when wasm is unavailable, so behavior is unchanged and only the
+performance differs.
 
 ## 4. Infrastructure — Podman, Kubernetes, HCL
 

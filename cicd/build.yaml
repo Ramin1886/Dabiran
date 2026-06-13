@@ -22,6 +22,22 @@ jobs:
         working-directory: apps/backend
         run: go build -o main ./src
 
+  test_wasm_math:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+      - name: Test core math (native)
+        working-directory: packages/wasm-math
+        run: cargo test
+      - name: Build wasm (compile guard)
+        working-directory: packages/wasm-math
+        run: wasm-pack build --target web --out-dir pkg
+
   test_frontend_and_packages:
     runs-on: ubuntu-latest
     steps:
@@ -34,6 +50,8 @@ jobs:
         run: npm ci
       - name: Test packages and frontend
         run: npm test
+      # The committed packages/wasm-math/pkg lets the frontend build without a
+      # Rust toolchain; the test_wasm_math job guards that it still compiles.
       - name: Build Vite Matrix
         run: npm run build -w frontend
 

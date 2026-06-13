@@ -1,0 +1,15 @@
+{
+  "name": "@git-viz/wasm-math",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Rust→WebAssembly canvas math (viewport culling + Bezier spline flattening) for the frontend renderer. The crate is the source of truth; pkg/ is the committed wasm-pack build output.",
+  "main": "pkg/git_viz_wasm_math.js",
+  "module": "pkg/git_viz_wasm_math.js",
+  "types": "pkg/git_viz_wasm_math.d.ts",
+  "files": ["pkg"],
+  "scripts": {
+    "build:wasm": "wasm-pack build --target web --out-dir pkg && rm -f pkg/.gitignore",
+    "test:wasm": "cargo test"
+  }
+}

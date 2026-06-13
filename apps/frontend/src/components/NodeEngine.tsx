@@ -3,12 +3,22 @@ import { Graphics, Text } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import type { CommitNode, DependencyLink } from '@git-viz/shared-types';
 import { screenToWorld } from '@git-viz/utils';
+import {
+  type WorldRect,
+  initMathEngine,
+  cullIndices,
+  cullSegmentIndices,
+  bezierPolyline,
+  segmentTouchesRect,
+} from '../math/engine';
 import { useStore } from '../store/useStore';
 
 const NODE_RADIUS = 16;
 const HEADER_Y_OFFSET = 120;
 const ROW_HEIGHT = 80;
 const BASE_X_OFFSET = 50;
+/** Sub-segments used to flatten a Bezier branch connector into a polyline. */
+const BEZIER_SEGMENTS = 24;
 /** Half-width/height of the aggregate cluster rounded-rect glyph. */
 const AGG_HALF_W = 28;
 const AGG_HALF_H = 18;
@@ -32,14 +42,6 @@ const VIA_LABEL_MAX = 24;
  * shared-types edit has landed yet.
  */
 export type RenderNode = CommitNode & { kind?: string; count?: number };
-
-/** Axis-aligned world-space rectangle used for viewport culling. */
-interface WorldRect {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-}
 
 /**
  * Resolves a node's world-space X coordinate from the backend-assigned
@@ -79,39 +81,6 @@ export function isAggregate(node: RenderNode): boolean {
  */
 export function aggregateLabel(node: RenderNode): string {
   return `+${node.count ?? 1}`;
-}
-
-/**
- * Tests whether a world point falls inside a rectangle (inclusive bounds).
- */
-function pointInRect(x: number, y: number, r: WorldRect): boolean {
-  return x >= r.minX && x <= r.maxX && y >= r.minY && y <= r.maxY;
-}
-
-/**
- * Tests whether a connector segment from (ax,ay) to (bx,by) is relevant to
- * the visible rect: relevant when either endpoint is inside, or when the
- * segment's bounding box overlaps the rect (cheap conservative crossing test
- * that keeps long diagonals spanning the viewport drawn).
- */
-function segmentTouchesRect(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  r: WorldRect,
-): boolean {
-  if (pointInRect(ax, ay, r) || pointInRect(bx, by, r)) return true;
-  const segMinX = Math.min(ax, bx);
-  const segMaxX = Math.max(ax, bx);
-  const segMinY = Math.min(ay, by);
-  const segMaxY = Math.max(ay, by);
-  return (
-    segMaxX >= r.minX &&
-    segMinX <= r.maxX &&
-    segMaxY >= r.minY &&
-    segMinY <= r.maxY
-  );
 }
 
 /**
@@ -189,10 +158,13 @@ function readScreenSize(): { width: number; height: number } {
  * connected by Bezier branch splines, using the backend layout fields
  * x_offset/lane.
  *
- * Performance: only nodes inside the padded visible world rectangle are
- * rendered, and a connector is drawn only when its segment touches that rect.
- * The rect is derived with useMemo from the viewport transform + screen size,
- * and a window resize listener keeps the screen size fresh.
+ * Performance: the per-frame geometry (which nodes/connectors fall inside the
+ * padded visible world rectangle, and the flattened Bezier connector points)
+ * is computed by the Rust→WebAssembly engine (`../math/engine`) once it loads,
+ * with an identical pure-TS fallback until then. Only nodes inside the rect
+ * are rendered, and a connector is drawn only when its segment touches it. The
+ * rect is derived with useMemo from the viewport transform + screen size, and
+ * a window resize listener keeps the screen size fresh.
  */
 export const NodeEngine: React.FC = () => {
   const visibleNodes = useStore((state) => state.visibleNodes) as RenderNode[];
@@ -203,11 +175,24 @@ export const NodeEngine: React.FC = () => {
 
   // Track the screen size so the visible rect recomputes on window resize.
   const [screenSize, setScreenSize] = useState(readScreenSize);
+  // Flips true once the wasm math engine has initialized, triggering a
+  // recompute so subsequent frames use the accelerated backend.
+  const [wasmReady, setWasmReady] = useState(false);
 
   useEffect(() => {
     const onResize = () => setScreenSize(readScreenSize());
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    initMathEngine().then((ready) => {
+      if (active && ready) setWasmReady(true);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   /**
@@ -237,42 +222,72 @@ export const NodeEngine: React.FC = () => {
     [visibleNodes],
   );
 
+  /** Packed node world coordinates `[x0,y0,…]` fed to the culling engine. */
+  const positions = useMemo(() => {
+    const arr = new Float32Array(visibleNodes.length * 2);
+    visibleNodes.forEach((n, i) => {
+      arr[2 * i] = nodeX(n);
+      arr[2 * i + 1] = nodeY(n);
+    });
+    return arr;
+  }, [visibleNodes]);
+
+  /** Indices of visibleNodes inside the rect (wasm-accelerated when ready). */
+  const visibleNodeIndices = useMemo(
+    () => new Set<number>(cullIndices(positions, visibleRect)),
+    [positions, visibleRect, wasmReady],
+  );
+
+  /** Connector edges between visible parent/child pairs, with endpoints. */
+  const edges = useMemo(() => {
+    const list: { key: string; sx: number; sy: number; ex: number; ey: number }[] = [];
+    for (const node of visibleNodes) {
+      node.parents.forEach((parentHash, i) => {
+        const parentNode = nodesByHash.get(parentHash);
+        if (!parentNode) return;
+        list.push({
+          key: `${parentHash}-${node.hash}-${i}`,
+          sx: nodeX(parentNode),
+          sy: nodeY(parentNode),
+          ex: nodeX(node),
+          ey: nodeY(node),
+        });
+      });
+    }
+    return list;
+  }, [visibleNodes, nodesByHash]);
+
+  /** Indices of edges whose segment touches the rect (wasm-accelerated). */
+  const visibleEdgeIndices = useMemo(() => {
+    const segs = new Float32Array(edges.length * 4);
+    edges.forEach((e, i) => {
+      segs[4 * i] = e.sx;
+      segs[4 * i + 1] = e.sy;
+      segs[4 * i + 2] = e.ex;
+      segs[4 * i + 3] = e.ey;
+    });
+    return new Set<number>(cullSegmentIndices(segs, visibleRect));
+  }, [edges, visibleRect, wasmReady]);
+
   /**
-   * Renders the branch connector lines: straight segments along a lane and
-   * Bezier diagonals across lanes for splits/merges. Culled to connectors
-   * whose segment touches the visible rect.
+   * Renders the branch connector lines as polylines flattened by the math
+   * engine: a straight segment along a lane, or a sampled Bezier diagonal
+   * across lanes for splits/merges. Culled to connectors whose segment touches
+   * the visible rect.
    */
   const renderLines = () => {
-    return visibleNodes.map((node) => {
-      return node.parents.map((parentHash, i) => {
-        const parentNode = nodesByHash.get(parentHash);
-        if (!parentNode) return null;
-
-        const startX = nodeX(parentNode);
-        const startY = nodeY(parentNode);
-        const endX = nodeX(node);
-        const endY = nodeY(node);
-
-        if (!segmentTouchesRect(startX, startY, endX, endY, visibleRect)) {
-          return null;
+    return edges.map((e, i) => {
+      if (!visibleEdgeIndices.has(i)) return null;
+      const pts = bezierPolyline(e.sx, e.sy, e.ex, e.ey, BEZIER_SEGMENTS);
+      const draw = (g: PIXI.Graphics) => {
+        g.clear();
+        g.lineStyle(2, 0x828282, 0.6);
+        g.moveTo(pts[0], pts[1]);
+        for (let k = 2; k < pts.length; k += 2) {
+          g.lineTo(pts[k], pts[k + 1]);
         }
-
-        const draw = (g: PIXI.Graphics) => {
-          g.clear();
-          g.lineStyle(2, 0x828282, 0.6);
-          g.moveTo(startX, startY);
-
-          if (startY === endY) {
-            g.lineTo(endX, endY);
-          } else {
-            // Bezier diagonal mapping split/merge lane crossings smoothly.
-            const controlPointX = startX + (endX - startX) / 2;
-            g.bezierCurveTo(controlPointX, startY, controlPointX, endY, endX, endY);
-          }
-        };
-
-        return <Graphics key={`${parentHash}-${node.hash}-${i}`} draw={draw} />;
-      });
+      };
+      return <Graphics key={e.key} draw={draw} />;
     });
   };
 
@@ -282,12 +297,11 @@ export const NodeEngine: React.FC = () => {
    * "+N" count label. Culled to nodes inside the visible rect.
    */
   const renderNodes = () => {
-    return visibleNodes.map((node) => {
+    return visibleNodes.map((node, idx) => {
+      if (!visibleNodeIndices.has(idx)) return null;
+
       const x = nodeX(node);
       const y = nodeY(node);
-
-      if (!pointInRect(x, y, visibleRect)) return null;
-
       const isSelected = selectedNode === node.hash;
       const aggregate = isAggregate(node);
       const fillColor = isSelected ? 0x00e5ff : aggregate ? 0x8b5cf6 : 0x3b82f6;

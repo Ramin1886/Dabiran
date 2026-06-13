@@ -31,6 +31,9 @@ cleared. Verification gates (all green):
 - Chronological layout, branch lanes, Bezier connectors, tag/short-hash
   labels, commit inspection panel.
 - Infinite viewport with pointer-anchored zoom/pan and **viewport culling**.
+- **Rust → WebAssembly math engine** (`@git-viz/wasm-math`): viewport culling
+  and Bezier connector flattening over packed Float32Array buffers, lazily
+  loaded with an identical pure-TS fallback.
 - **Server-side graph aggregation** (`?max_nodes`) collapsing linear runs
   into cluster nodes, rendered as distinct glyphs.
 - **Meilisearch** full-text search (indexed on demand, graceful 503), with an
@@ -56,16 +59,19 @@ cleared. Verification gates (all green):
   Kustomize when a `KUBE_CONFIG` secret is present. `cicd/build.yaml` runs
   the CI test/validation gate.
 
-## Skipped / deferred (and why)
+All specified roadmap features are now implemented (see
+`docs/todo_features.md`).
 
-- **Selective branch-visibility toggles** — UI work on top of the existing
-  retention algorithm; not yet built. The only open roadmap item.
-- **Rust → WASM canvas math engine** — a performance optimization; the
-  current TypeScript math is adequate at present scale.
+## Notes / deferred details
+
 - **GitHub profile fetch in tests** — exercised via a fake `GitHubClient`;
   the real network call is integration-only.
 - **`packages/ui-components`** — no shared cross-app DOM components exist yet;
   an empty library would be speculative.
+- **wasm-math `pkg/`** — the committed `wasm-pack` build output, so the
+  frontend builds without a Rust toolchain. Regenerate with
+  `npm run build:wasm` when `packages/wasm-math/src` changes; CI's
+  `test_wasm_math` job guards that the crate still compiles and its tests pass.
 
 ## Operating notes
 
